@@ -1,0 +1,163 @@
+/**
+ * Notion Bot - Main Entry Point
+ * Telegram bot for Notion task management
+ */
+require('dotenv').config();
+
+const { Telegraf } = require('telegraf');
+const { getTodayTasks, formatTodayTasks } = require('./src/commands/todayTasks');
+const { handleNotionHealth } = require('./src/commands/notionHealth');
+const {
+    handleTaskCommand, handleCallbackOpen,
+    handleCallbackRequest, handleCallbackResolve
+} = require('./src/commands/pm');
+const { runStrategyAnalysis, formatStrategyReport } = require('./src/pm/strategy');
+const { getStrategicAdvice } = require('./src/ai/gemini');
+const { authMiddleware, loggerMiddleware } = require('./src/pm/middleware');
+
+// Validate environment
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const NOTION_TOKEN = process.env.NOTION_TOKEN;
+
+if (!TELEGRAM_TOKEN) {
+    console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
+    process.exit(1);
+}
+
+if (!NOTION_TOKEN) {
+    console.error('❌ NOTION_TOKEN not set in .env');
+    process.exit(1);
+}
+
+const bot = new Telegraf(TELEGRAM_TOKEN);
+
+// Middleware (Security & Logging)
+bot.use(authMiddleware);
+bot.use(loggerMiddleware);
+
+// /start command
+bot.command('start', async (ctx) => {
+    await ctx.reply(
+        '👋 *Welcome to Notion Task Bot!*\n\n' +
+        '📅 *Daily*\n' +
+        '• /today\\_tasks - Top 5 tasks for today\n' +
+        '• /notion\\_health - Workspace health report\n\n' +
+        '🚀 *Project Manager*\n' +
+        '• /task `<query>` - Search tasks\n' +
+        '• /task `<id>` - View detail & actions\n' +
+        '• /strategy - Strategic "State of the Union" report\n' +
+        '• /improve - 🧠 AI-powered strategic advice\n',
+        { parse_mode: 'Markdown' }
+    );
+});
+
+// /today_tasks command
+bot.command('today_tasks', async (ctx) => {
+    try {
+        await ctx.reply('📥 Fetching your tasks...');
+        const tasks = await getTodayTasks(5);
+        const formatted = formatTodayTasks(tasks);
+        await ctx.reply(formatted, { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('today_tasks error:', err);
+        await ctx.reply(`❌ Error: ${err.message}`);
+    }
+});
+
+// /notion_health command
+bot.command('notion_health', handleNotionHealth);
+
+// PM Commands
+bot.command('task', handleTaskCommand);
+bot.command('strategy', async (ctx) => {
+    try {
+        await ctx.reply('🧠 Analyzing strategy & roadmap...');
+        const analysis = await runStrategyAnalysis();
+        const report = formatStrategyReport(analysis);
+
+        // Telegram message limit safety - chunk by lines, not mid-tag
+        const lines = report.split('\n');
+        const chunks = [];
+        let current = '';
+        for (const line of lines) {
+            if ((current + '\n' + line).length > 4000) {
+                chunks.push(current);
+                current = line;
+            } else {
+                current = current ? current + '\n' + line : line;
+            }
+        }
+        if (current) chunks.push(current);
+
+        for (const chunk of chunks) {
+            await ctx.reply(chunk, { parse_mode: 'HTML' });
+        }
+    } catch (err) {
+        console.error('Strategy error:', err);
+        await ctx.reply(`❌ Strategy check failed: ${err.message}`);
+    }
+});
+
+// AI Improve Command
+bot.command('improve', async (ctx) => {
+    try {
+        await ctx.replyWithChatAction('typing');
+        const analysis = await runStrategyAnalysis();
+
+        // Check if we have issues to improve
+        const hasStalled = analysis.issues.stalledGoals.length > 0;
+        const hasZombies = analysis.issues.zombieProjects.length > 0;
+
+        if (!hasStalled && !hasZombies && !analysis.issues.isOverloaded) {
+            return ctx.reply('🌟 You are optimizing perfectly! No critical issues found.');
+        }
+
+        await ctx.reply('🤔 Consulting the Oracle (Gemini)...');
+
+        // Get advice
+        const advice = await getStrategicAdvice(analysis);
+
+        await ctx.reply(advice, { parse_mode: 'Markdown' });
+
+    } catch (err) {
+        console.error('Improve error:', err);
+        await ctx.reply(`❌ Improvement check failed: ${err.message}`);
+    }
+});
+
+// Callbacks
+bot.action(/^pm:open:(.+)$/, handleCallbackOpen);
+bot.action(/^pm:req:(.+):(.+)$/, handleCallbackRequest);
+bot.action(/^pm:(approve|reject):(.+)$/, handleCallbackResolve);
+
+// Error handling
+bot.catch((err, ctx) => {
+    console.error(`Bot error for ${ctx.updateType}:`, err);
+});
+
+// Graceful shutdown
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// Register commands and start bot
+(async () => {
+    try {
+        // Set Telegram Command Menu
+        bot.telegram.setMyCommands([
+            { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
+            { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
+            { command: 'improve', description: '✨ AI Advice on what to fix next' },
+            { command: 'task', description: '🔎 Search or view tasks' },
+            { command: 'notion_health', description: '🏥 Workspace health check' }
+        ]).then(() => {
+            console.log('✅ Telegram command menu updated');
+        }).catch(console.error);
+
+        // Start bot
+        bot.launch();
+        console.log('🤖 Notion Bot started (polling mode)');
+    } catch (err) {
+        console.error('Failed to start bot:', err);
+        process.exit(1);
+    }
+})();
