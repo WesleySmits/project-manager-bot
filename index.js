@@ -154,6 +154,29 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
         }).catch(console.error);
 
         // Start bot
+        // Health Check Server
+        const http = require('http');
+        const HEALTH_PORT = process.env.PORT || 3301;
+
+        const server = http.createServer((req, res) => {
+            if (req.url === '/health') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    status: 'ok',
+                    service: 'project-manager',
+                    timestamp: new Date().toISOString()
+                }));
+            } else {
+                res.writeHead(404);
+                res.end();
+            }
+        });
+
+        server.listen(HEALTH_PORT, () => {
+            console.log(`✅ Health check running on port ${HEALTH_PORT}`);
+        });
+
+        // Start bot
         bot.launch();
         console.log('🤖 Notion Bot started (polling mode)');
     } catch (err) {
