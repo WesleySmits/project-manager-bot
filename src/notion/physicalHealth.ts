@@ -226,9 +226,9 @@ async function upsertDailyEntry(dbId: string, stats: DailyStats) {
         'Stand Hours': { number: Number(stats.standHours.toFixed(1)) },
         'Exercise Time': { number: Math.round(stats.exerciseTime) },
         'Flights Climbed': { number: stats.flights },
-        'Weight': { number: Number(stats.weight.toFixed(1)) },
-        'Body Fat': { number: Number(stats.bodyFat.toFixed(1)) },
-        'BMI': { number: Number(stats.bmi.toFixed(1)) },
+        'Weight': { number: stats.weightCount > 0 ? Number(stats.weight.toFixed(1)) : null },
+        'Body Fat': { number: stats.bodyFatCount > 0 ? Number(stats.bodyFat.toFixed(1)) : null },
+        'BMI': { number: stats.bmiCount > 0 ? Number(stats.bmi.toFixed(1)) : null },
 
         // Sleep breakdown
         'Sleep Total': { number: Number(stats.sleepTotal.toFixed(2)) },
