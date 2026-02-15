@@ -1,6 +1,34 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { api, type MetricsResponse, type MetricData } from '../client';
+
 import MiniChart from '../components/MiniChart';
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend,
+    Filler,
+} from 'chart.js';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    PointElement,
+    LineElement,
+    Title,
+    Tooltip,
+    Legend,
+    Filler
+);
+
+// Set default font to our CSS var (requires getting computed style or hardcoding 'Inter')
+ChartJS.defaults.font.family = '"Space Grotesk", sans-serif';
+ChartJS.defaults.color = '#a1a1aa'; // var(--text-secondary)
+ChartJS.defaults.scale.grid.color = '#27272a'; // var(--border-default)
 
 // ─── Date Range Helpers ──────────────────────────────────────────────────────
 
@@ -202,7 +230,7 @@ export default function HealthDashboard() {
                                     <div className="card-body">
                                         <MiniChart
                                             data={(bodyFat?.data ?? []).map(d => ({ date: String(d.date), value: d.qty as number }))}
-                                            color="var(--orange)"
+                                            color="#fb923c" // var(--orange)
                                             formatValue={v => v.toFixed(1) + '%'}
                                         />
                                     </div>
@@ -212,7 +240,7 @@ export default function HealthDashboard() {
                                     <div className="card-body">
                                         <MiniChart
                                             data={(bmi?.data ?? []).map(d => ({ date: String(d.date), value: d.qty as number }))}
-                                            color="var(--accent)"
+                                            color="#818cf8" // var(--accent)
                                             formatValue={v => v.toFixed(1)}
                                         />
                                     </div>
@@ -222,7 +250,7 @@ export default function HealthDashboard() {
                                     <div className="card-body">
                                         <MiniChart
                                             data={(weight?.data ?? []).map(d => ({ date: String(d.date), value: d.qty as number }))}
-                                            color="var(--green)"
+                                            color="#4ade80" // var(--green)
                                             formatValue={v => v.toFixed(1) + ' kg'}
                                         />
                                     </div>
