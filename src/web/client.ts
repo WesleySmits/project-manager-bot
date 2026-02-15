@@ -173,3 +173,15 @@ export const api = {
     aiInsight: () => post<{ insight: string }>('/ai/insight'),
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
 };
+
+// ─── Prefetch ────────────────────────────────────────────────────────────────
+
+/** Fire all cacheable GET requests in the background to warm the cache. */
+export function prefetchAll(): void {
+    void api.dashboard();
+    void api.tasks();
+    void api.projects();
+    void api.goals();
+    void api.health();
+    void api.strategy();
+}

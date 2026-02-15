@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -7,8 +7,10 @@ import Projects from './pages/Projects';
 import Goals from './pages/Goals';
 import Health from './pages/Health';
 import Insights from './pages/Insights';
+import { prefetchAll } from './client';
 
 export default function App() {
+    useEffect(() => { prefetchAll(); }, []);
     return (
         <div className="app-layout">
             <Sidebar />
