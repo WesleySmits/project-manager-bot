@@ -11,6 +11,9 @@ COPY . .
 # Build TypeScript backend + Vite frontend
 RUN npm run build
 
+# Ensure health data storage directory exists
+RUN mkdir -p /app/data/health
+
 # Match the health check port you added in index.js (3301)
 ENV PORT=3301
 EXPOSE 3301

@@ -161,6 +161,17 @@ export interface StrategyData {
     }>;
 }
 
+export interface HealthExportMeta {
+    filename: string;
+    date: string;
+    sizeBytes: number;
+}
+
+export interface HealthExportsResponse {
+    exports: HealthExportMeta[];
+    total: number;
+}
+
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 export const api = {
@@ -172,6 +183,8 @@ export const api = {
     strategy:  () => get<StrategyData>('/analysis/strategy'),
     aiInsight: () => post<{ insight: string }>('/ai/insight'),
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
+    healthExports: () => get<HealthExportsResponse>('/health-data/exports'),
+    healthExport: (filename: string) => get<unknown>(`/health-data/exports/${filename}`, true),
 };
 
 // ─── Prefetch ────────────────────────────────────────────────────────────────

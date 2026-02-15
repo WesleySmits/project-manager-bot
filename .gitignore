@@ -26,3 +26,4 @@ pids
 .DS_Store
 dist
 mcp_config.json
+data/

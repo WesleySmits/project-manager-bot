@@ -13,6 +13,10 @@ const analysisItems = [
     { to: '/insights', label: 'Insights', icon: '✦' },
 ];
 
+const personalItems = [
+    { to: '/health-data', label: 'Health Data', icon: '💓' },
+];
+
 export default function Sidebar() {
     return (
         <aside className="sidebar">
@@ -36,6 +40,18 @@ export default function Sidebar() {
 
                 <div className="sidebar-section-label">Analysis</div>
                 {analysisItems.map(item => (
+                    <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={({ isActive }) => isActive ? 'active' : ''}
+                    >
+                        <span className="nav-icon">{item.icon}</span>
+                        {item.label}
+                    </NavLink>
+                ))}
+
+                <div className="sidebar-section-label">Personal</div>
+                {personalItems.map(item => (
                     <NavLink
                         key={item.to}
                         to={item.to}
