@@ -14,6 +14,7 @@ const {
 const { runStrategyAnalysis, formatStrategyReport } = require('./src/pm/strategy');
 const { getStrategicAdvice } = require('./src/ai/gemini');
 const { authMiddleware, loggerMiddleware } = require('./src/pm/middleware');
+const { sendMorningBriefing } = require('./src/commands/morningBrief');
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -153,12 +154,11 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
             console.log('✅ Telegram command menu updated');
         }).catch(console.error);
 
-        // Start bot
-        // Health Check Server
+        // Health Check Server with Morning Briefing endpoint
         const http = require('http');
         const HEALTH_PORT = process.env.PORT || 3301;
 
-        const server = http.createServer((req, res) => {
+        const server = http.createServer(async (req, res) => {
             if (req.url === '/health') {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
@@ -166,6 +166,23 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
                     service: 'project-manager',
                     timestamp: new Date().toISOString()
                 }));
+            } else if (req.url === '/morning-brief') {
+                try {
+                    await sendMorningBriefing(bot);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        status: 'ok',
+                        message: 'Morning briefing sent',
+                        timestamp: new Date().toISOString()
+                    }));
+                } catch (err) {
+                    console.error('Morning brief endpoint error:', err);
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        status: 'error',
+                        message: err.message
+                    }));
+                }
             } else {
                 res.writeHead(404);
                 res.end();
@@ -173,7 +190,7 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
         });
 
         server.listen(HEALTH_PORT, () => {
-            console.log(`✅ Health check running on port ${HEALTH_PORT}`);
+            console.log(`✅ Health check + morning brief endpoint running on port ${HEALTH_PORT}`);
         });
 
         // Start bot
