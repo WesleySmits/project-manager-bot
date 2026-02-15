@@ -1,11 +1,13 @@
 /**
  * Notion Bot - Main Entry Point
- * Telegram bot for Notion task management
+ * Telegram bot + Express API for web interface
  */
 import '@js-temporal/polyfill';
 import 'dotenv/config';
 import { Telegraf, Context } from 'telegraf';
-import * as http from 'http';
+import express from 'express';
+import cors from 'cors';
+import * as path from 'path';
 import { getTodayTasks, formatTodayTasks } from './src/commands/todayTasks';
 import { handleNotionHealth } from './src/commands/notionHealth';
 import {
@@ -16,6 +18,7 @@ import { runStrategyAnalysis, formatStrategyReport } from './src/pm/strategy';
 import { getStrategicAdvice } from './src/ai/gemini';
 import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
 import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morningBrief';
+import apiRoutes from './src/routes/api';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -146,65 +149,70 @@ bot.catch((err, ctx) => {
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-// Register commands and start bot
-(async () => {
+// ─── Express Server ──────────────────────────────────────────────────────────
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// API routes
+app.use('/api', apiRoutes);
+
+// Morning briefing endpoint (legacy)
+app.post('/morning-brief', async (_req, res) => {
     try {
-        // Set Telegram Command Menu
-        bot.telegram.setMyCommands([
-            { command: 'morning', description: '☀️ Morning briefing' },
-            { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
-            { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
-            { command: 'improve', description: '✨ AI Advice on what to fix next' },
-            { command: 'task', description: '🔎 Search or view tasks' },
-            { command: 'notion_health', description: '🏥 Workspace health check' }
-        ]).then(() => {
-            console.log('✅ Telegram command menu updated');
-        }).catch(console.error);
-
-        // Health Check Server with Morning Briefing endpoint
-        const HEALTH_PORT = process.env.PORT || 3301;
-
-        const server = http.createServer(async (req, res) => {
-            if (req.url === '/health') {
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'ok',
-                    service: 'project-manager',
-                    timestamp: new Date().toISOString()
-                }));
-            } else if (req.url === '/morning-brief') {
-                try {
-                    await sendMorningBriefing(bot);
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'ok',
-                        message: 'Morning briefing sent',
-                        timestamp: new Date().toISOString()
-                    }));
-                } catch (err) {
-                    console.error('Morning brief endpoint error:', err);
-                    const errorMessage = (err instanceof Error) ? err.message : String(err);
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        message: errorMessage
-                    }));
-                }
-            } else {
-                res.writeHead(404);
-                res.end();
-            }
-        });
-
-        server.listen(HEALTH_PORT, () => {
-            console.log(`✅ Health check + morning brief endpoint running on port ${HEALTH_PORT}`);
-        });
-
-        // Start bot
-        bot.launch();
-        console.log('🤖 Notion Bot started (polling mode)');
+        await sendMorningBriefing(bot);
+        res.json({ status: 'ok', message: 'Morning briefing sent', timestamp: new Date().toISOString() });
     } catch (err) {
-        console.error('Failed to start bot:', err);
-        process.exit(1);
+        console.error('Morning brief endpoint error:', err);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        res.status(500).json({ status: 'error', message: errorMessage });
     }
-})();
+});
+
+// Serve static frontend (production)
+const webDistPath = path.join(__dirname, 'web');
+app.use(express.static(webDistPath));
+
+// SPA fallback - serve index.html for all non-API routes
+app.get('{*path}', (_req, res) => {
+    const indexPath = path.join(webDistPath, 'index.html');
+    res.sendFile(indexPath, (err) => {
+        if (err) {
+            // During development when web isn't built yet
+            res.status(200).json({ status: 'ok', message: 'API is running. Web UI not built yet.' });
+        }
+    });
+});
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+
+// Start Express server first (always available)
+const PORT = process.env.PORT || 3301;
+app.listen(PORT, () => {
+    console.log(`✅ Express server running on port ${PORT}`);
+    console.log(`   API: http://localhost:${PORT}/api/health`);
+    console.log(`   Web: http://localhost:${PORT}/`);
+});
+
+// Start Telegram bot (non-blocking — Express stays up if this fails)
+bot.telegram.setMyCommands([
+    { command: 'morning', description: '☀️ Morning briefing' },
+    { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
+    { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
+    { command: 'improve', description: '✨ AI Advice on what to fix next' },
+    { command: 'task', description: '🔎 Search or view tasks' },
+    { command: 'notion_health', description: '🏥 Workspace health check' }
+]).then(() => {
+    console.log('✅ Telegram command menu updated');
+}).catch(err => {
+    console.warn('⚠️ Failed to update Telegram commands:', err.message);
+});
+
+bot.launch().then(() => {
+    console.log('🤖 Notion Bot started (polling mode)');
+}).catch(err => {
+    console.error('⚠️ Telegram bot failed to start:', err.message);
+    console.log('   Express API is still running — web interface available.');
+});
+

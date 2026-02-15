@@ -1,0 +1,28 @@
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Sidebar from './components/Sidebar';
+import Dashboard from './pages/Dashboard';
+import Tasks from './pages/Tasks';
+import Projects from './pages/Projects';
+import Goals from './pages/Goals';
+import Health from './pages/Health';
+import Insights from './pages/Insights';
+
+export default function App() {
+    return (
+        <div className="app-layout">
+            <Sidebar />
+            <main className="main-content">
+                <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/tasks" element={<Tasks />} />
+                    <Route path="/projects" element={<Projects />} />
+                    <Route path="/goals" element={<Goals />} />
+                    <Route path="/health" element={<Health />} />
+                    <Route path="/insights" element={<Insights />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </main>
+        </div>
+    );
+}

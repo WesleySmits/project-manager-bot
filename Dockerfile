@@ -8,7 +8,7 @@ RUN npm install
 
 COPY . .
 
-# Build TypeScript
+# Build TypeScript backend + Vite frontend
 RUN npm run build
 
 # Match the health check port you added in index.js (3301)

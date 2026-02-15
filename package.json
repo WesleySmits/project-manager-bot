@@ -4,7 +4,10 @@
   "description": "Telegram bot for Notion task management",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npx vite build",
+    "build:server": "tsc",
+    "build:web": "npx vite build",
+    "dev:web": "npx vite",
     "health": "node -e \"require('dotenv').config(); const {runHealthCheck,formatHealthReport}=require('./src/notion/health'); runHealthCheck().then(r=>console.log(formatHealthReport(r)))\"",
     "tasks": "node -e \"require('dotenv').config(); const {getTodayTasks,formatTodayTasks}=require('./src/commands/todayTasks'); getTodayTasks(5).then(t=>console.log(formatTodayTasks(t)))\""
   },
@@ -12,12 +15,23 @@
     "@google/generative-ai": "^0.3.1",
     "@js-temporal/polyfill": "^0.5.1",
     "@notionhq/client": "^5.9.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
+    "express": "^5.2.1",
     "telegraf": "^4.12.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
   }
 }
