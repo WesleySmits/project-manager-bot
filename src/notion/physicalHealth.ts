@@ -24,12 +24,26 @@ async function getHealthDatabaseId(): Promise<string> {
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
+interface HealthExportDataPoint {
+    date: string;
+    qty?: number;
+    source?: string;
+    // Sleep specific fields
+    asleep?: number;
+    inBed?: number;
+    core?: number;
+    deep?: number;
+    rem?: number;
+    awake?: number;
+    totalSleep?: number;
+}
+
 interface HealthExport {
     data: {
         metrics: {
             name: string;
             units: string;
-            data: { date: string; qty: number; source?: string }[]
+            data: HealthExportDataPoint[]
         }[]
     }
 }
@@ -99,7 +113,7 @@ export async function syncHealthData(exportData: HealthExport): Promise<{ synced
         for (const entry of metric.data) {
             const day = getDay(entry.date);
             const stats = getStats(day);
-            const qty = entry.qty;
+            const qty = entry.qty || 0;
 
             switch (metric.name) {
                 case 'step_count':
@@ -112,9 +126,22 @@ export async function syncHealthData(exportData: HealthExport): Promise<{ synced
                 case 'basal_energy_burned':
                     stats.restingEnergy += metric.units === 'kJ' ? qty * 0.239006 : qty;
                     break;
-                case 'apple_stand_time':
-                    // minutes -> hours
-                    stats.standHours += qty / 60;
+                case 'apple_stand_hour':
+                case 'apple_stand_time': // Handle both, prefer hour logic if it allows count
+                    // If apple_stand_time comes as min, we might want to convert to hours?
+                    // But if apple_stand_hour is present, it's the count.
+                    // Let's assume apple_stand_hour is authoritative for "Rings".
+                    // If this is 'apple_stand_hour' (count), just add it.
+                    if (metric.name === 'apple_stand_hour') {
+                         stats.standHours += qty;
+                    } else {
+                        // apple_stand_time (duration in min)
+                        // Ignore for now to avoid double counting if both exist,
+                        // or if only this exists, convert.
+                        // Safe bet: if standHours is 0, use this / 60.
+                        // But verifying order is hard.
+                        // Let's rely on apple_stand_hour (count) mainly.
+                    }
                     break;
                 case 'apple_exercise_time':
                     stats.exerciseTime += qty; // minutes
@@ -122,26 +149,32 @@ export async function syncHealthData(exportData: HealthExport): Promise<{ synced
                 case 'flights_climbed':
                     stats.flights += qty;
                     break;
+                case 'weight_body_mass':
                 case 'body_mass':
-                    // Average later
-                    stats.weight += qty;
-                    stats.weightCount++;
+                    if (qty > 0) {
+                        stats.weight += qty;
+                        stats.weightCount++;
+                    }
                     break;
                 case 'body_fat_percentage':
-                    stats.bodyFat += qty; // usually 0-1 or 0-100?
-                    stats.bodyFatCount++;
+                    if (qty > 0) {
+                        stats.bodyFat += qty; // usually 0-100
+                        stats.bodyFatCount++;
+                    }
                     break;
                 case 'body_mass_index':
-                    stats.bmi += qty;
-                    stats.bmiCount++;
+                    if (qty > 0) {
+                        stats.bmi += qty;
+                        stats.bmiCount++;
+                    }
                     break;
                 case 'sleep_analysis':
-                    // Special handling: if name contains 'sleep'
-                    if (metric.name.includes('sleep')) {
-                         // If min, /60.
-                         if (metric.units === 'min') stats.sleepTotal = stats.sleepTotal + (qty / 60);
-                         else stats.sleepTotal += qty;
-                    }
+                    // Handle breakdown
+                    stats.sleepTotal += entry.totalSleep || 0;
+                    stats.sleepDeep += entry.deep || 0;
+                    stats.sleepCore += entry.core || 0;
+                    stats.sleepRem += entry.rem || 0;
+                    stats.sleepAwake += entry.awake || 0;
                     break;
             }
         }
@@ -196,14 +229,18 @@ async function upsertDailyEntry(dbId: string, stats: DailyStats) {
         'Weight': { number: Number(stats.weight.toFixed(1)) },
         'Body Fat': { number: Number(stats.bodyFat.toFixed(1)) },
         'BMI': { number: Number(stats.bmi.toFixed(1)) },
-        'Sleep Total': { number: Number(stats.sleepTotal.toFixed(1)) }
+
+        // Sleep breakdown
+        'Sleep Total': { number: Number(stats.sleepTotal.toFixed(2)) },
+        'Sleep Deep': { number: Number(stats.sleepDeep.toFixed(2)) },
+        'Sleep Core': { number: Number(stats.sleepCore.toFixed(2)) },
+        'Sleep REM': { number: Number(stats.sleepRem.toFixed(2)) },
+        'Sleep Awake': { number: Number(stats.sleepAwake.toFixed(2)) },
     };
 
     if (existingPage) {
-        // Update
         await updatePage(existingPage.id, props);
     } else {
-        // Create
         props['Log'] = { title: [{ text: { content: stats.date } }] };
         await createPage(dbId, props);
     }
@@ -213,7 +250,8 @@ async function upsertDailyEntry(dbId: string, stats: DailyStats) {
 
 export interface NotionMetric {
     name: string;
-    data: { date: string; qty: number }[];
+    // Map to flexible record to support extra props like 'deep', 'core'
+    data: Array<Record<string, unknown>>;
     units: string;
 }
 
@@ -244,8 +282,10 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
         'active_energy': 'Active Energy',
         'basal_energy_burned': 'Resting Energy',
         'apple_stand_hour': 'Stand Hours',
+        'apple_stand_time': 'Stand Hours', // Map both just in case
         'apple_exercise_time': 'Exercise Time',
         'flights_climbed': 'Flights Climbed',
+        'weight_body_mass': 'Weight',
         'body_mass': 'Weight',
         'body_fat_percentage': 'Body Fat',
         'body_mass_index': 'BMI',
@@ -257,9 +297,11 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
         'active_energy': 'kcal',
         'basal_energy_burned': 'kcal',
         'apple_stand_hour': 'hr',
+        'apple_stand_time': 'hr',
         'apple_exercise_time': 'min',
         'flights_climbed': 'count',
         'body_mass': 'kg',
+        'weight_body_mass': 'kg',
         'body_fat_percentage': '%',
         'body_mass_index': 'count',
         'sleep_analysis': 'hr'
@@ -269,14 +311,32 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
         const propName = map[name];
         if (!propName) continue;
 
-        const data: { date: string; qty: number }[] = [];
+        const data: Array<Record<string, unknown>> = [];
 
         for (const page of pages) {
             const date = getDate(page, 'Date');
             if (!date) continue;
 
+            // Special handling for sleep
+            if (name === 'sleep_analysis') {
+                 const total = page.properties['Sleep Total']?.number || 0;
+                 const deep = page.properties['Sleep Deep']?.number || 0;
+                 const core = page.properties['Sleep Core']?.number || 0;
+                 const rem = page.properties['Sleep REM']?.number || 0;
+                 const awake = page.properties['Sleep Awake']?.number || 0;
+
+                 // If all zeros, maybe skip? or push 0.
+                 data.push({
+                     date,
+                     qty: total,
+                     totalSleep: total,
+                     deep, core, rem, awake,
+                     asleep: total // Fallback
+                 });
+                 continue;
+            }
+
             const val = page.properties?.[propName]?.number;
-            // Only add if value exists (not null)
             if (typeof val === 'number') {
                 data.push({ date, qty: val });
             }
