@@ -1,7 +1,7 @@
 
 import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage } from './client';
 
-let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || null;
+let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || 'd7b72947-241c-4cf2-9ef9-7bb79049482b';
 
 /**
  * Find the Health Metrics database ID if not already known
