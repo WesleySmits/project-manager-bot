@@ -13,7 +13,7 @@ if (API_KEY) {
     genAI = new GoogleGenerativeAI(API_KEY);
     // Fallback to Flash if Pro is unavailable, or use 'gemini-pro' (v1.0)
     // User asked for "Pro 3" (likely meaning the latest Pro or Flash)
-    model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash-exp' });
+    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 } else {
     console.warn('⚠️ GEMINI_API_KEY is missing. AI features will be disabled.');
 }

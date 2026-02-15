@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "google-developer-knowledge": {
+      "url": "https://developerknowledge.googleapis.com/mcp",
+      "env": {
+        "GOOGLE_API_KEY": "${GOOGLE_DEVELOPER_KNOWLEDGE_API_KEY}"
+      }
+    }
+  }
+}

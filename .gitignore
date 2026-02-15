@@ -25,3 +25,4 @@ pids
 .idea
 .DS_Store
 dist
+mcp_config.json
