@@ -4,51 +4,62 @@
  */
 const dayjs = require('dayjs');
 const { getTodayTasks } = require('./todayTasks');
+const { runHealthCheck } = require('../notion/health');
+const { fetchGoals } = require('../notion/client');
+const { getTaskInsights } = require('../ai/gemini');
 
 /**
  * Generate morning briefing message with "why" explanations
  * @returns {Promise<string>}
  */
 async function generateMorningBriefing() {
-    const tasks = await getTodayTasks(3); // Top 3 tasks
-    
-    if (tasks.length === 0) {
-        return '✨ *Good morning!*\n\nNo urgent tasks today. Great time for deep work or strategic planning.';
-    }
+    // parallel fetch for performance
+    const [tasks, health, goals] = await Promise.all([
+        getTodayTasks(3),
+        runHealthCheck(),
+        fetchGoals()
+    ]);
 
-    const lines = ['☀️ *Good morning! Here are your top 3 priorities:*\n'];
+    const lines = [];
     const today = dayjs();
 
-    tasks.forEach((task, i) => {
-        // Priority emoji
-        const emoji = task.priority?.toLowerCase().includes('high') || task.priority?.toLowerCase().includes('p1') ? '🔴' :
-                      task.priority?.toLowerCase().includes('medium') || task.priority?.toLowerCase().includes('p2') ? '🟠' : '🟢';
-        
-        // Build "why" explanation based on scoring factors
-        let why = '';
-        
-        if (task.dueDate && dayjs(task.dueDate).isBefore(today, 'day')) {
-            const daysLate = today.diff(dayjs(task.dueDate), 'day');
-            why = `⚠️ Overdue by ${daysLate} day${daysLate > 1 ? 's' : ''} → clears backlog`;
-        } else if (task.dueDate && dayjs(task.dueDate).isSame(today, 'day')) {
-            why = '📅 Due today → keeps you on track';
-        } else if (task.scheduledDate && dayjs(task.scheduledDate).isBefore(today, 'day')) {
-            const daysLate = today.diff(dayjs(task.scheduledDate), 'day');
-            why = `⚠️ Scheduled ${daysLate} day${daysLate > 1 ? 's' : ''} ago → should have been done`;
-        } else if (task.scheduledDate && dayjs(task.scheduledDate).isSame(today, 'day')) {
-            why = '🎯 You scheduled this for today';
-        } else if (task.priority?.toLowerCase().includes('high') || task.priority?.toLowerCase().includes('p1')) {
-            why = '🚀 High priority → likely unlocks other work';
-        } else if (task.status?.toLowerCase().includes('in progress')) {
-            why = '🔄 Already in progress → finish what you started';
-        }
+    // 1. HEADER
+    lines.push('☀️ *Good morning!*');
+    lines.push('');
 
-        lines.push(`${i + 1}. ${emoji} *${task.title}*`);
-        if (why) lines.push(`   _${why}_`);
+    // 2. ISSUES (if any)
+    const { issues } = health;
+    const criticalIssues = [];
+
+    if (issues.orphanedTasks.length > 0) criticalIssues.push(`${issues.orphanedTasks.length} orphaned tasks`);
+    if (issues.projectsWithoutGoal.length > 0) criticalIssues.push(`${issues.projectsWithoutGoal.length} projects w/o goal`);
+    if (issues.overdueDueDate.length > 0) criticalIssues.push(`${issues.overdueDueDate.length} overdue tasks`);
+
+    if (criticalIssues.length > 0) {
+        lines.push('🚨 *Attention Needed:*');
+        lines.push(`You have ${criticalIssues.join(', ')} to fix in Notion.`);
         lines.push('');
-    });
+    }
 
-    lines.push('💪 *Completing these will reduce your mental load and build momentum.*');
+    // 3. PRIORITIES
+    if (tasks.length === 0) {
+        lines.push('✨ No urgent tasks today. Great time for deep work or strategic planning.');
+    } else {
+        lines.push('🎯 *Top 3 Priorities:*');
+        tasks.forEach((task, i) => {
+            // Priority emoji
+            const emoji = task.priority?.toLowerCase().includes('high') || task.priority?.toLowerCase().includes('p1') ? '🔴' :
+                task.priority?.toLowerCase().includes('medium') || task.priority?.toLowerCase().includes('p2') ? '🟠' : '🟢';
+
+            lines.push(`${i + 1}. ${emoji} *${task.title}*`);
+        });
+        lines.push('');
+
+        // 4. AI INSIGHTS
+        const insights = await getTaskInsights(tasks, goals);
+        lines.push('🧠 *Insight:*');
+        lines.push(`_${insights}_`);
+    }
 
     return lines.join('\n');
 }
@@ -60,7 +71,7 @@ async function generateMorningBriefing() {
  */
 async function sendMorningBriefing(bot) {
     const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-    
+
     if (!CHAT_ID) {
         console.error('⚠️ TELEGRAM_CHAT_ID not set, skipping morning briefing');
         throw new Error('TELEGRAM_CHAT_ID not configured');

@@ -60,6 +60,48 @@ async function getStrategicAdvice(analysis) {
     }
 }
 
+/**
+ * Generate insights on how today's tasks contribute to life goals
+ * @param {Array} tasks - List of today's tasks
+ * @param {Array} goals - List of active goals
+ * @returns {Promise<string>} AI-generated insight text
+ */
+async function getTaskInsights(tasks, goals) {
+    if (!model) return "⚠️ AI insights unavailable (Key missing)";
+
+    const context = {
+        role: "You are a wise and motivating productivity coach.",
+        data: {
+            tasks: tasks.map(t => ({
+                title: t.title,
+                priority: t.priority,
+                project: t.properties?.Project?.relation?.[0]?.id // We might not have project name resolved here easily without extra fetching, but let's try to rely on Title/Context
+            })),
+            goals: goals.map(g => ({
+                title: g.properties?.Name?.title?.[0]?.plain_text || 'Untitled'
+            }))
+        },
+        instructions: `
+        Analyze how these specific tasks contribute to the user's life goals.
+        1. Connect the dots between the tasks and the goals where possible.
+        2. If a task seems unrelated to goals, mention it as a necessary maintenance or tactical step.
+        3. Provide a coherent, 2-3 sentence paragraph explaining WHY these tasks are the right thing to focus on today.
+        4. Be encouraging but grounded.
+        5. Start directly with the insight, no "Here is the insight:" preamble.
+        `
+    };
+
+    try {
+        const result = await model.generateContent(JSON.stringify(context));
+        const response = await result.response;
+        return response.text();
+    } catch (err) {
+        console.error('Gemini Insight Error:', err);
+        return "Could not generate insights at this time.";
+    }
+}
+
 module.exports = {
-    getStrategicAdvice
+    getStrategicAdvice,
+    getTaskInsights
 };
