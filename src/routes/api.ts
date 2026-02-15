@@ -6,7 +6,7 @@ import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, 
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
 import { getTodayTasks } from '../commands/todayTasks';
-import { getStrategicAdvice } from '../ai/gemini';
+import { getStrategicAdvice, generateMotivation } from '../ai/gemini';
 
 const router = Router();
 
@@ -74,6 +74,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         const activeTasks = tasks.filter(t => !isCompleted(t));
         const activeProjects = projects.filter(isActiveProject);
         const activeGoals = goals.filter(g => !isCompleted(g));
+        const analysis = await runStrategyAnalysis();
 
         const totalIssues =
             health.issues.orphanedTasks.length +
@@ -81,6 +82,47 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
             health.issues.overdueDueDate.length +
             health.issues.overdueScheduled.length +
             health.issues.missingRequiredFields.length;
+
+        // Calculate today's impact: which projects/goals are affected by today's tasks
+        const todayTaskIds = new Set(todayTasks.map((t: { id: string }) => t.id));
+        const projectsAffected = new Map<string, { title: string; url: string; taskCount: number }>();
+
+        for (const task of activeTasks) {
+            if (!todayTaskIds.has(task.id)) continue;
+            const relIds = getRelationIds(task, 'Project') || getRelationIds(task, 'Projects') || [];
+            for (const pid of relIds) {
+                const proj = projects.find(p => p.id === pid);
+                if (proj && isActiveProject(proj)) {
+                    const existing = projectsAffected.get(pid);
+                    if (existing) {
+                        existing.taskCount++;
+                    } else {
+                        projectsAffected.set(pid, {
+                            title: getTitle(proj),
+                            url: proj.url,
+                            taskCount: 1,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Find goals linked to affected projects
+        const goalsAffected: Array<{ title: string; url: string; progress: number; projectsInGoal: number }> = [];
+        const affectedProjectIds = new Set(projectsAffected.keys());
+        for (const goal of activeGoals) {
+            const goalRelIds = getRelationIds(goal, 'Projects') || getRelationIds(goal, 'Project') || [];
+            const hasAffectedProject = goalRelIds.some(id => affectedProjectIds.has(id));
+            if (hasAffectedProject) {
+                const progress = analysis.progress.find(p => p.id === goal.id);
+                goalsAffected.push({
+                    title: getTitle(goal),
+                    url: goal.url,
+                    progress: progress ? progress.percent : 0,
+                    projectsInGoal: goalRelIds.length,
+                });
+            }
+        }
 
         res.json({
             metrics: {
@@ -94,6 +136,10 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
             },
             todayTasks,
             overdueTasks: health.issues.overdueDueDate.map(serializeTask),
+            todayImpact: {
+                projectsAffected: [...projectsAffected.values()],
+                goalsAffected,
+            },
         });
     } catch (err) {
         console.error('Dashboard API error:', err);
@@ -171,8 +217,8 @@ router.get('/analysis/health', async (_req: Request, res: Response) => {
                 overdueDueDate: health.issues.overdueDueDate.map(serializeTask),
                 overdueScheduled: health.issues.overdueScheduled.map(serializeTask),
                 missingRequiredFields: health.issues.missingRequiredFields.map(serializeTask),
-                missingDescription: health.issues.missingDescription.length,
-                projectsMissingDescription: health.issues.projectsMissingDescription.length,
+                missingDescription: health.issues.missingDescription.map(serializeTask),
+                projectsMissingDescription: health.issues.projectsMissingDescription.map(serializeProject),
             },
         });
     } catch (err) {
@@ -209,6 +255,27 @@ router.post('/ai/insight', async (_req: Request, res: Response) => {
     } catch (err) {
         console.error('AI Insight API error:', err);
         res.status(500).json({ error: 'Failed to generate insight' });
+    }
+});
+
+/** AI motivation - generate a motivational message based on today's work */
+router.post('/ai/motivation', async (_req: Request, res: Response) => {
+    try {
+        const [todayTasks, goals, projects] = await Promise.all([
+            getTodayTasks(5),
+            fetchGoals(),
+            fetchProjects(),
+        ]);
+        const analysis = await runStrategyAnalysis();
+        const activeGoals = goals.filter(g => !isCompleted(g));
+        const motivation = await generateMotivation(todayTasks, activeGoals.map(g => ({
+            title: getTitle(g),
+            progress: analysis.progress.find(p => p.id === g.id)?.percent || 0,
+        })), projects.filter(isActiveProject).map(getTitle));
+        res.json({ motivation });
+    } catch (err) {
+        console.error('Motivation API error:', err);
+        res.status(500).json({ error: 'Failed to generate motivation' });
     }
 });
 

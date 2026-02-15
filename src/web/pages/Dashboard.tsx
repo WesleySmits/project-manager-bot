@@ -12,15 +12,23 @@ function priorityClass(p: string | null): string {
 export default function Dashboard() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [motivation, setMotivation] = useState<string | null>(null);
+    const [motivationLoading, setMotivationLoading] = useState(false);
 
     useEffect(() => {
         api.dashboard().then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
     }, []);
 
+    const handleMotivation = () => {
+        setMotivationLoading(true);
+        api.motivation().then(r => { setMotivation(r.motivation); setMotivationLoading(false); }).catch(() => setMotivationLoading(false));
+    };
+
     if (loading) return <div className="loading-state"><span className="spinner" /> Loading dashboard…</div>;
     if (!data) return <div className="empty-state">Failed to load dashboard.</div>;
 
     const m = data.metrics;
+    const impact = data.todayImpact;
 
     return (
         <>
@@ -47,8 +55,70 @@ export default function Dashboard() {
                     </div>
                 </div>
 
+                {/* Today's Impact — what you're actually achieving */}
+                {impact && (impact.projectsAffected.length > 0 || impact.goalsAffected.length > 0) && (
+                    <div className="section fade-in stagger-1">
+                        <div className="section-title">🎯 Today's Impact</div>
+                        <div className="card">
+                            <div className="card-body">
+                                {impact.projectsAffected.length > 0 && (
+                                    <div style={{ marginBottom: 16 }}>
+                                        <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 8 }}>
+                                            Projects you're advancing
+                                        </div>
+                                        {impact.projectsAffected.map((p, i) => (
+                                            <a key={i} href={p.url} target="_blank" rel="noreferrer" className="issue-item" style={{ textDecoration: 'none' }}>
+                                                <span className="issue-dot accent" />
+                                                <span style={{ flex: 1 }}>{p.title}</span>
+                                                <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                                                    {p.taskCount} task{p.taskCount !== 1 ? 's' : ''} today
+                                                </span>
+                                            </a>
+                                        ))}
+                                    </div>
+                                )}
+                                {impact.goalsAffected.length > 0 && (
+                                    <div>
+                                        <div style={{ fontSize: 11, textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.06em', marginBottom: 8 }}>
+                                            Goals you're progressing
+                                        </div>
+                                        {impact.goalsAffected.map((g, i) => (
+                                            <a key={i} href={g.url} target="_blank" rel="noreferrer" className="issue-item" style={{ textDecoration: 'none' }}>
+                                                <span className="issue-dot green" />
+                                                <span style={{ flex: 1 }}>{g.title}</span>
+                                                <span style={{ color: 'var(--green)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                                                    {g.progress}% complete
+                                                </span>
+                                            </a>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* AI Motivation */}
+                <div className="section fade-in stagger-2">
+                    <div className="section-title">💡 Why This Matters</div>
+                    <div className="card">
+                        <div className="card-body">
+                            {motivation ? (
+                                <div style={{ lineHeight: 1.7, color: 'var(--text-secondary)' }}
+                                    dangerouslySetInnerHTML={{ __html: motivation.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--text-primary)">$1</strong>') }} />
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                                    <button className="btn btn-primary" onClick={handleMotivation} disabled={motivationLoading}>
+                                        {motivationLoading ? 'Thinking…' : '✨ Show me why today matters'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 {/* Today's Priorities */}
-                <div className="section fade-in stagger-1">
+                <div className="section fade-in stagger-3">
                     <div className="section-title">Today's Priorities</div>
                     <div className="card">
                         <div className="card-body no-pad">
@@ -86,7 +156,7 @@ export default function Dashboard() {
 
                 {/* Overdue */}
                 {data.overdueTasks.length > 0 && (
-                    <div className="section fade-in stagger-2">
+                    <div className="section fade-in stagger-4">
                         <div className="section-title">⚠ Overdue</div>
                         <div className="card">
                             <div className="card-body no-pad">

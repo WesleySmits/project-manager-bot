@@ -124,3 +124,41 @@ export async function getTaskInsights(tasks: Task[], goals: Goal[]): Promise<str
         return "Could not generate insights at this time.";
     }
 }
+
+/**
+ * Generate a motivational message about today's work impact
+ */
+export async function generateMotivation(
+    todayTasks: Array<{ title: string; id: string }>,
+    goals: Array<{ title: string; progress: number }>,
+    activeProjects: string[]
+): Promise<string> {
+    if (!model) return "⚠️ Motivation unavailable (Key missing)";
+
+    const context = {
+        role: "You are a concise, energizing productivity coach. You speak directly and with conviction.",
+        data: {
+            todayTasks: todayTasks.map(t => t.title),
+            goals: goals.map(g => ({ goal: g.title, progress: `${g.progress}%` })),
+            activeProjects,
+        },
+        instructions: `
+        The user is about to start their day. Based on the tasks scheduled today and their life goals:
+        1. Explain in 2-3 sentences how today's tasks move the needle on their goals.
+        2. Pick the single most impactful task and explain WHY it matters for their life trajectory.
+        3. End with one powerful motivating sentence.
+        4. Be specific — reference actual task names and goal names.
+        5. Keep it under 100 words total. No markdown headers, just flowing text with bold for emphasis.
+        `
+    };
+
+    try {
+        const result = await model.generateContent(JSON.stringify(context));
+        const response = await result.response;
+        return response.text();
+    } catch (err) {
+        console.error('Gemini Motivation Error:', err);
+        return "Could not generate motivation at this time.";
+    }
+}
+
