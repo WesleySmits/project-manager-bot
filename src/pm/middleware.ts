@@ -2,9 +2,10 @@
  * Middleware for the Project Manager Bot
  * Handles logging and security whitelisting
  */
-const fs = require('fs');
-const path = require('path');
-const dayjs = require('dayjs');
+import * as fs from 'fs';
+import * as path from 'path';
+import dayjs from 'dayjs';
+import { Context } from 'telegraf';
 
 // Constants
 const ALLOWED_USER_ID = parseInt(process.env.TELEGRAM_CHAT_ID || '1962079073');
@@ -13,9 +14,16 @@ const LOG_FILE = path.join(__dirname, '../../logs/pm_commands.log');
 /**
  * Append to log file
  */
-function logToDisk(message) {
+export function logToDisk(message: string): void {
     const timestamp = dayjs().format('YYYY-MM-DD HH:mm:ss');
     const line = `[${timestamp}] ${message}\n`;
+
+    // Ensure directory exists
+    const logDir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+    }
+
     fs.appendFile(LOG_FILE, line, (err) => {
         if (err) console.error('Failed to write to log:', err);
     });
@@ -24,7 +32,7 @@ function logToDisk(message) {
 /**
  * Middleware: Verify user is whitelisted
  */
-const authMiddleware = async (ctx, next) => {
+export const authMiddleware = async (ctx: Context, next: () => Promise<void>): Promise<void> => {
     const userId = ctx.from?.id;
 
     if (userId !== ALLOWED_USER_ID) {
@@ -41,15 +49,18 @@ const authMiddleware = async (ctx, next) => {
 /**
  * Middleware: Log commands and approvals
  */
-const loggerMiddleware = async (ctx, next) => {
+export const loggerMiddleware = async (ctx: Context, next: () => Promise<void>): Promise<void> => {
     const userId = ctx.from?.id;
     const username = ctx.from?.username || 'unknown';
     let action = '';
 
-    if (ctx.message?.text) {
-        action = `COMMAND: ${ctx.message.text}`;
-    } else if (ctx.callbackQuery?.data) {
-        action = `CALLBACK: ${ctx.callbackQuery.data}`;
+    // Telegraf types might need specific casting or checks for message content
+    const message = ctx.message as any;
+
+    if (message?.text) {
+        action = `COMMAND: ${message.text}`;
+    } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        action = `CALLBACK: ${(ctx.callbackQuery as any).data}`;
     } else {
         action = `EVENT: ${ctx.updateType}`;
     }
@@ -59,10 +70,4 @@ const loggerMiddleware = async (ctx, next) => {
     logToDisk(logMessage);
 
     return next();
-};
-
-module.exports = {
-    authMiddleware,
-    loggerMiddleware,
-    logToDisk
 };

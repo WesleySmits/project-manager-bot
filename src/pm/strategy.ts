@@ -2,17 +2,44 @@
  * Strategy Analysis Module
  * The "Project Manager" brain that analyzes high-level progress and health.
  */
-const dayjs = require('dayjs');
-const {
+import {
     fetchTasks, fetchProjects, fetchGoals,
-    getTitle, isCompleted, getRelationIds, getDate,
-    isActiveProject, isBlocked
-} = require('../notion/client');
+    getTitle, isCompleted, getRelationIds, isActiveProject,
+    NotionPage
+} from '../notion/client';
+
+export interface GoalProgress {
+    id: string;
+    title: string;
+    url: string;
+    percent: number;
+    total: number;
+    completed: number;
+}
+
+export interface StrategyMetrics {
+    activeGoalsCount: number;
+    activeProjectsCount: number;
+    activeTasksCount: number;
+    focusScore: number;
+}
+
+export interface StrategyIssues {
+    stalledGoals: NotionPage[];
+    zombieProjects: NotionPage[];
+    isOverloaded: boolean;
+}
+
+export interface StrategyAnalysis {
+    metrics: StrategyMetrics;
+    issues: StrategyIssues;
+    progress: GoalProgress[];
+}
 
 /**
  * Run comprehensive strategy analysis
  */
-async function runStrategyAnalysis() {
+export async function runStrategyAnalysis(): Promise<StrategyAnalysis> {
     const [tasks, projects, goals] = await Promise.all([
         fetchTasks(),
         fetchProjects(),
@@ -98,15 +125,15 @@ async function runStrategyAnalysis() {
 /**
  * Format the strategy report
  */
-function formatStrategyReport(analysis) {
+export function formatStrategyReport(analysis: StrategyAnalysis): string {
     const { metrics, issues, progress } = analysis;
-    const lines = [];
+    const lines: string[] = [];
 
     lines.push('<b>🧠 Tactical Strategy Report</b>');
     lines.push(`Focus Score: ${metrics.focusScore}/100`);
     lines.push('──────────────────────────');
 
-    const escapeHtml = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const escapeHtml = (str: string | null) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
     // 1. Focus Warning
     if (issues.isOverloaded) {
@@ -147,8 +174,3 @@ function formatStrategyReport(analysis) {
 
     return lines.join('\n');
 }
-
-module.exports = {
-    runStrategyAnalysis,
-    formatStrategyReport
-};

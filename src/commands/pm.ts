@@ -4,18 +4,19 @@
  * /task search <query>
  * /tasks due <today|tomorrow|overdue>
  */
-const {
+import { Context } from 'telegraf';
+import dayjs from 'dayjs';
+import {
     search, getPage, getTitle, getDescription, getDate, hasRelation,
-    isCompleted
-} = require('../notion/client');
-const { createRequest, updateRequestStatus, getRequest } = require('../pm/approvals');
-const { logToDisk } = require('../pm/middleware');
-const dayjs = require('dayjs');
+    NotionPage
+} from '../notion/client';
+import { createRequest, updateRequestStatus, getRequest } from '../pm/approvals';
+import { logToDisk } from '../pm/middleware';
 
 /**
  * Format a single task detail view
  */
-function formatTaskDetail(page) {
+function formatTaskDetail(page: NotionPage): string {
     const icon = page.icon?.emoji || '📄';
     const title = getTitle(page);
     const status = page.properties?.Status?.status?.name || 'No Status';
@@ -52,7 +53,7 @@ function formatTaskDetail(page) {
 /**
  * Handle /task search <query>
  */
-async function handleTaskSearch(ctx, query) {
+async function handleTaskSearch(ctx: Context, query: string): Promise<any> {
     await ctx.reply(`🔍 Searching for "${query}"...`);
     try {
         const results = await search(query);
@@ -76,14 +77,15 @@ async function handleTaskSearch(ctx, query) {
         }
     } catch (err) {
         console.error(err);
-        ctx.reply(`Error searching: ${err.message}`);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        ctx.reply(`Error searching: ${errorMessage}`);
     }
 }
 
 /**
  * Handle /task <id> or detail view
  */
-async function handleTaskDetail(ctx, id) {
+async function handleTaskDetail(ctx: Context, id: string): Promise<void> {
     try {
         await ctx.replyWithChatAction('typing');
         const page = await getPage(id);
@@ -103,15 +105,17 @@ async function handleTaskDetail(ctx, id) {
         });
     } catch (err) {
         console.error(err);
-        ctx.reply(`Error fetching task: ${err.message}`);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        ctx.reply(`Error fetching task: ${errorMessage}`);
     }
 }
 
 /**
  * Handle Command: /task
  */
-async function handleTaskCommand(ctx) {
-    const input = ctx.message.text.split(' ').slice(1).join(' ');
+export async function handleTaskCommand(ctx: Context): Promise<any> {
+    const text = (ctx.message as any)?.text || '';
+    const input = text.split(' ').slice(1).join(' ');
 
     if (!input) {
         return ctx.reply('Usage: /task <search query> OR /task <id>');
@@ -133,7 +137,8 @@ async function handleTaskCommand(ctx) {
 /**
  * Handle Callback: Open Task
  */
-async function handleCallbackOpen(ctx) {
+export async function handleCallbackOpen(ctx: Context): Promise<void> {
+    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
     const id = ctx.match[1]; // Captured from regex `pm:open:(.+)`
     await ctx.answerCbQuery();
     await handleTaskDetail(ctx, id);
@@ -142,9 +147,11 @@ async function handleCallbackOpen(ctx) {
 /**
  * Handle Callback: Request Action (Approval Flow)
  */
-async function handleCallbackRequest(ctx) {
+export async function handleCallbackRequest(ctx: Context): Promise<void> {
+    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
     const [_, action, id] = ctx.match; // `pm:req:(.+):(.+)`
-    const userId = ctx.from.id;
+    const userId = ctx.from?.id;
+    if (!userId) return;
 
     // Create pending request
     const reqId = await createRequest(action.toUpperCase(), { taskId: id }, userId);
@@ -168,9 +175,12 @@ async function handleCallbackRequest(ctx) {
 /**
  * Handle Callback: Resolve Request (Approve/Reject)
  */
-async function handleCallbackResolve(ctx) {
+export async function handleCallbackResolve(ctx: Context): Promise<any> {
+    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
     const [_, decision, reqId] = ctx.match; // `pm:(approve|reject):(.+)`
-    const userId = ctx.from.id;
+    const userId = ctx.from?.id;
+
+    if (!userId) return;
 
     try {
         const req = await getRequest(reqId);
@@ -192,10 +202,3 @@ async function handleCallbackResolve(ctx) {
         ctx.answerCbQuery('Error resolving request');
     }
 }
-
-module.exports = {
-    handleTaskCommand,
-    handleCallbackOpen,
-    handleCallbackRequest,
-    handleCallbackResolve
-};

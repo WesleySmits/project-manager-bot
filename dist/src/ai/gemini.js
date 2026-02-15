@@ -1,42 +1,41 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getStrategicAdvice = getStrategicAdvice;
+exports.getTaskInsights = getTaskInsights;
 /**
  * Gemini AI Client for Strategic Advice
  */
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
+const generative_ai_1 = require("@google/generative-ai");
 // Get API Key from env
 const API_KEY = process.env.GEMINI_API_KEY;
-
 let genAI = null;
 let model = null;
-
 if (API_KEY) {
-    genAI = new GoogleGenerativeAI(API_KEY);
+    genAI = new generative_ai_1.GoogleGenerativeAI(API_KEY);
     // Fallback to Flash if Pro is unavailable, or use 'gemini-pro' (v1.0)
     // User asked for "Pro 3" (likely meaning the latest Pro or Flash)
-    model = genAI.getGenerativeModel({ model: 'models/gemini-2.5-pro' });
-} else {
+    model = genAI.getGenerativeModel({ model: 'models/gemini-2.0-flash-exp' });
+}
+else {
     console.warn('⚠️ GEMINI_API_KEY is missing. AI features will be disabled.');
 }
-
 /**
  * Generate improvement advice based on strategy analysis
- * @param {Object} analysis - The JSON output from strategy.js
+ * @param {StrategyAnalysis} analysis - The JSON output from strategy.js
  */
 async function getStrategicAdvice(analysis) {
     if (!model) {
         throw new Error('Gemini API Key is missing. Please add GEMINI_API_KEY to .env');
     }
-
     const { metrics, issues, progress } = analysis;
-
     // Prepare context for the LLM
     const context = {
         role: "You are an elite, no-nonsense Project Manager auditing a user's life operating system.",
         data: {
             active_projects: metrics.activeProjectsCount,
             project_limit: 5,
-            stalled_goals: issues.stalledGoals.map(g => g.properties?.Name?.title?.[0]?.plain_text || 'Untitled'),
-            zombie_projects: issues.zombieProjects.map(p => p.properties?.['Project name']?.title?.[0]?.plain_text || 'Untitled'),
+            stalled_goals: issues.stalledGoals.map((g) => g.properties?.Name?.title?.[0]?.plain_text || 'Untitled'),
+            zombie_projects: issues.zombieProjects.map((p) => p.properties?.['Project name']?.title?.[0]?.plain_text || 'Untitled'),
             goal_progress: progress.map(p => ({ goal: p.title, percent: p.percent }))
         },
         instructions: `
@@ -49,26 +48,25 @@ async function getStrategicAdvice(analysis) {
       6. End with a concrete proposal: "Shall we create a project for [Goal]?"
     `
     };
-
     try {
         const result = await model.generateContent(JSON.stringify(context));
         const response = await result.response;
         return response.text();
-    } catch (err) {
+    }
+    catch (err) {
         console.error('Gemini API Error:', err);
         throw new Error('Failed to generate advice from Gemini.');
     }
 }
-
 /**
  * Generate insights on how today's tasks contribute to life goals
- * @param {Array} tasks - List of today's tasks
- * @param {Array} goals - List of active goals
+ * @param {Task[]} tasks - List of today's tasks
+ * @param {Goal[]} goals - List of active goals
  * @returns {Promise<string>} AI-generated insight text
  */
 async function getTaskInsights(tasks, goals) {
-    if (!model) return "⚠️ AI insights unavailable (Key missing)";
-
+    if (!model)
+        return "⚠️ AI insights unavailable (Key missing)";
     const context = {
         role: "You are a wise and motivating productivity coach.",
         data: {
@@ -90,18 +88,13 @@ async function getTaskInsights(tasks, goals) {
         5. Start directly with the insight, no "Here is the insight:" preamble.
         `
     };
-
     try {
         const result = await model.generateContent(JSON.stringify(context));
         const response = await result.response;
         return response.text();
-    } catch (err) {
+    }
+    catch (err) {
         console.error('Gemini Insight Error:', err);
         return "Could not generate insights at this time.";
     }
 }
-
-module.exports = {
-    getStrategicAdvice,
-    getTaskInsights
-};

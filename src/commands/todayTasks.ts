@@ -2,20 +2,25 @@
  * Today Tasks Command
  * Fetches and scores tasks to show the most important items for today
  */
-const dayjs = require('dayjs');
-const { fetchTasks, getTitle, getDescription, isCompleted, getDate, hasRelation } = require('../notion/client');
+import dayjs from 'dayjs';
+import { fetchTasks, getTitle, isCompleted, getDate, hasRelation, NotionPage } from '../notion/client';
+
+interface ScoredTask {
+    id: string;
+    title: string;
+    priority: string | undefined;
+    status: string | undefined;
+    dueDate: string | null;
+    scheduledDate: string | null;
+    hasProject: boolean;
+    score: number;
+}
 
 /**
  * Score a task based on urgency
  * Higher score = more urgent/important
- *
- * Weights:
- * - Due date: 40% (deadline urgency)
- * - Scheduled date: 30% (planned for today/overdue = highest relevance)
- * - Priority: 25% (High/Medium/Low)
- * - Status: 5% (In Progress gets slight boost)
  */
-function scoreTask(task) {
+export function scoreTask(task: NotionPage): number {
     const props = task.properties || {};
     const today = dayjs();
 
@@ -95,7 +100,7 @@ function scoreTask(task) {
 /**
  * Get priority emoji
  */
-function getPriorityEmoji(priority) {
+function getPriorityEmoji(priority: string | null | undefined): string {
     if (!priority) return '⚪';
     const p = priority.toLowerCase();
     if (p.includes('high') || p.includes('p1') || p.includes('urgent')) return '🔴';
@@ -107,7 +112,7 @@ function getPriorityEmoji(priority) {
 /**
  * Format date for display
  */
-function formatDate(date) {
+function formatDate(date: string | null): string | null {
     if (!date) return null;
     return dayjs(date).format('D MMM');
 }
@@ -115,20 +120,20 @@ function formatDate(date) {
 /**
  * Get top tasks for today
  * @param {number} limit - Number of tasks to return
- * @returns {Promise<Array>}
+ * @returns {Promise<ScoredTask[]>}
  */
-async function getTodayTasks(limit = 5) {
+export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
     const allTasks = await fetchTasks();
 
     // Filter out completed/canceled tasks
     const activeTasks = allTasks.filter(t => !isCompleted(t));
 
     // Score and sort
-    const scoredTasks = activeTasks.map(t => ({
+    const scoredTasks: ScoredTask[] = activeTasks.map(t => ({
         id: t.id,
         title: getTitle(t),
-        priority: t.properties?.Priority?.select?.name || null,
-        status: t.properties?.Status?.status?.name || null,
+        priority: t.properties?.Priority?.select?.name || undefined,
+        status: t.properties?.Status?.status?.name || undefined,
         dueDate: getDate(t, 'Due Date') || getDate(t, 'Due'),
         scheduledDate: getDate(t, 'Scheduled'),
         hasProject: hasRelation(t),
@@ -143,9 +148,9 @@ async function getTodayTasks(limit = 5) {
 /**
  * Generate dynamic summary of why these tasks matter
  */
-function generateTaskSummary(tasks) {
+function generateTaskSummary(tasks: ScoredTask[]): string {
     const today = dayjs();
-    const lines = [];
+    const lines: string[] = [];
 
     const overdueCount = tasks.filter(t =>
         (t.dueDate && dayjs(t.dueDate).isBefore(today, 'day')) ||
@@ -192,7 +197,7 @@ function generateTaskSummary(tasks) {
 /**
  * Format tasks as text message
  */
-function formatTodayTasks(tasks) {
+export function formatTodayTasks(tasks: ScoredTask[]): string {
     if (tasks.length === 0) {
         return '✅ No urgent tasks! You\'re all caught up.';
     }
@@ -226,9 +231,3 @@ function formatTodayTasks(tasks) {
 
     return lines.join('\n');
 }
-
-module.exports = {
-    getTodayTasks,
-    formatTodayTasks,
-    scoreTask
-};

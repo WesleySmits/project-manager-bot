@@ -2,19 +2,19 @@
  * Notion Bot - Main Entry Point
  * Telegram bot for Notion task management
  */
-require('dotenv').config();
-
-const { Telegraf } = require('telegraf');
-const { getTodayTasks, formatTodayTasks } = require('./src/commands/todayTasks');
-const { handleNotionHealth } = require('./src/commands/notionHealth');
-const {
+import 'dotenv/config';
+import { Telegraf, Context } from 'telegraf';
+import * as http from 'http';
+import { getTodayTasks, formatTodayTasks } from './src/commands/todayTasks';
+import { handleNotionHealth } from './src/commands/notionHealth';
+import {
     handleTaskCommand, handleCallbackOpen,
     handleCallbackRequest, handleCallbackResolve
-} = require('./src/commands/pm');
-const { runStrategyAnalysis, formatStrategyReport } = require('./src/pm/strategy');
-const { getStrategicAdvice } = require('./src/ai/gemini');
-const { authMiddleware, loggerMiddleware } = require('./src/pm/middleware');
-const { sendMorningBriefing } = require('./src/commands/morningBrief');
+} from './src/commands/pm';
+import { runStrategyAnalysis, formatStrategyReport } from './src/pm/strategy';
+import { getStrategicAdvice } from './src/ai/gemini';
+import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
+import { sendMorningBriefing } from './src/commands/morningBrief';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -37,7 +37,7 @@ bot.use(authMiddleware);
 bot.use(loggerMiddleware);
 
 // /start command
-bot.command('start', async (ctx) => {
+bot.command('start', async (ctx: Context) => {
     await ctx.reply(
         '👋 *Welcome to Notion Task Bot!*\n\n' +
         '📅 *Daily*\n' +
@@ -53,7 +53,7 @@ bot.command('start', async (ctx) => {
 });
 
 // /today_tasks command
-bot.command('today_tasks', async (ctx) => {
+bot.command('today_tasks', async (ctx: Context) => {
     try {
         await ctx.reply('📥 Fetching your tasks...');
         const tasks = await getTodayTasks(5);
@@ -61,7 +61,8 @@ bot.command('today_tasks', async (ctx) => {
         await ctx.reply(formatted, { parse_mode: 'Markdown' });
     } catch (err) {
         console.error('today_tasks error:', err);
-        await ctx.reply(`❌ Error: ${err.message}`);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        await ctx.reply(`❌ Error: ${errorMessage}`);
     }
 });
 
@@ -70,7 +71,7 @@ bot.command('notion_health', handleNotionHealth);
 
 // PM Commands
 bot.command('task', handleTaskCommand);
-bot.command('strategy', async (ctx) => {
+bot.command('strategy', async (ctx: Context) => {
     try {
         await ctx.reply('🧠 Analyzing strategy & roadmap...');
         const analysis = await runStrategyAnalysis();
@@ -78,7 +79,7 @@ bot.command('strategy', async (ctx) => {
 
         // Telegram message limit safety - chunk by lines, not mid-tag
         const lines = report.split('\n');
-        const chunks = [];
+        const chunks: string[] = [];
         let current = '';
         for (const line of lines) {
             if ((current + '\n' + line).length > 4000) {
@@ -95,12 +96,13 @@ bot.command('strategy', async (ctx) => {
         }
     } catch (err) {
         console.error('Strategy error:', err);
-        await ctx.reply(`❌ Strategy check failed: ${err.message}`);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        await ctx.reply(`❌ Strategy check failed: ${errorMessage}`);
     }
 });
 
 // AI Improve Command
-bot.command('improve', async (ctx) => {
+bot.command('improve', async (ctx: Context) => {
     try {
         await ctx.replyWithChatAction('typing');
         const analysis = await runStrategyAnalysis();
@@ -110,7 +112,8 @@ bot.command('improve', async (ctx) => {
         const hasZombies = analysis.issues.zombieProjects.length > 0;
 
         if (!hasStalled && !hasZombies && !analysis.issues.isOverloaded) {
-            return ctx.reply('🌟 You are optimizing perfectly! No critical issues found.');
+             ctx.reply('🌟 You are optimizing perfectly! No critical issues found.');
+             return;
         }
 
         await ctx.reply('🤔 Consulting the Oracle (Gemini)...');
@@ -122,7 +125,8 @@ bot.command('improve', async (ctx) => {
 
     } catch (err) {
         console.error('Improve error:', err);
-        await ctx.reply(`❌ Improvement check failed: ${err.message}`);
+        const errorMessage = (err instanceof Error) ? err.message : String(err);
+        await ctx.reply(`❌ Improvement check failed: ${errorMessage}`);
     }
 });
 
@@ -155,7 +159,6 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
         }).catch(console.error);
 
         // Health Check Server with Morning Briefing endpoint
-        const http = require('http');
         const HEALTH_PORT = process.env.PORT || 3301;
 
         const server = http.createServer(async (req, res) => {
@@ -177,10 +180,11 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
                     }));
                 } catch (err) {
                     console.error('Morning brief endpoint error:', err);
+                    const errorMessage = (err instanceof Error) ? err.message : String(err);
                     res.writeHead(500, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({
                         status: 'error',
-                        message: err.message
+                        message: errorMessage
                     }));
                 }
             } else {

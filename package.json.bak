@@ -2,9 +2,9 @@
   "name": "notion-bot",
   "version": "1.0.0",
   "description": "Telegram bot for Notion task management",
-  "main": "dist/index.js",
+  "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "start": "node index.js",
     "health": "node -e \"require('dotenv').config(); const {runHealthCheck,formatHealthReport}=require('./src/notion/health'); runHealthCheck().then(r=>console.log(formatHealthReport(r)))\"",
     "tasks": "node -e \"require('dotenv').config(); const {getTodayTasks,formatTodayTasks}=require('./src/commands/todayTasks'); getTodayTasks(5).then(t=>console.log(formatTodayTasks(t)))\""
   },
