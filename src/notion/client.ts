@@ -70,6 +70,107 @@ export async function queryDatabase(databaseId: string, pageSize: number = 100):
 }
 
 /**
+ * Query a Notion database with specific filter and sorts
+ */
+export async function queryDatabaseFiltered(databaseId: string, filter?: any, sorts?: any[], pageSize: number = 100): Promise<NotionPage[]> {
+  const results: NotionPage[] = [];
+  let nextCursor: string | null = null;
+
+  do {
+    const body: any = { page_size: pageSize };
+    if (filter) body.filter = filter;
+    if (sorts) body.sorts = sorts;
+    if (nextCursor) body.start_cursor = nextCursor;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Notion query failed: ${res.status} ${text}`);
+      }
+
+      const json: NotionQueryResponse = await res.json() as NotionQueryResponse;
+      results.push(...json.results);
+      nextCursor = json.has_more ? json.next_cursor : null;
+    } catch (e) {
+      clearTimeout(timeout);
+      throw e;
+    }
+  } while (nextCursor);
+
+  return results;
+}
+
+/**
+ * Create a new page in a database
+ */
+export async function createPage(databaseId: string, properties: Record<string, any>): Promise<NotionPage> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({
+        parent: { database_id: databaseId },
+        properties
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Create page failed: ${res.status} ${text}`);
+    }
+
+    return await res.json() as NotionPage;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+/**
+ * Update an existing page properties
+ */
+export async function updatePage(pageId: string, properties: Record<string, any>): Promise<NotionPage> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ properties }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Update page failed: ${res.status} ${text}`);
+    }
+
+    return await res.json() as NotionPage;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+/**
  * Fetch all tasks from the Tasks database
  */
 export async function fetchTasks(): Promise<NotionPage[]> {

@@ -2,19 +2,21 @@
  * Health Data API Routes
  *
  * Endpoints for receiving and viewing Apple Health Auto Export data.
- * POST /           — receive and store a raw JSON export
+ * POST /           — receive, store to disk, and sync to Notion
  * GET  /exports    — list all stored exports
  * GET  /exports/:filename — retrieve a specific export
  * GET  /latest     — retrieve the most recent export
+ * GET  /metrics    — retrieve aggregated metrics from Notion
  */
 import { Router, Request, Response } from 'express';
 import { saveExport, listExports, getExport, getLatestExport } from '../health/store';
-import { getMetrics } from '../health/metrics';
+// import { getMetrics } from '../health/metrics'; // Legacy file-based
+import { syncHealthData, fetchHealthMetrics } from '../notion/physicalHealth';
 
 const router = Router();
 
-/** Query metrics by name and optional date range */
-router.get('/metrics', (req: Request, res: Response) => {
+/** Query metrics from Notion by name and optional date range */
+router.get('/metrics', async (req: Request, res: Response) => {
     try {
         const namesParam = req.query.names as string | undefined;
         if (!namesParam) {
@@ -25,7 +27,7 @@ router.get('/metrics', (req: Request, res: Response) => {
         const from = req.query.from as string | undefined;
         const to = req.query.to as string | undefined;
 
-        const result = getMetrics(names, from, to);
+        const result = await fetchHealthMetrics(names, from, to);
         res.json(result);
     } catch (err) {
         console.error('Health metrics error:', err);
@@ -35,21 +37,33 @@ router.get('/metrics', (req: Request, res: Response) => {
 });
 
 /** Receive a health data export from Apple Health Auto Export */
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
         if (!req.body || Object.keys(req.body).length === 0) {
             res.status(400).json({ error: 'Empty request body' });
             return;
         }
 
+        // 1. Save to disk (Backup)
         const { filename, sizeBytes } = saveExport(req.body);
-
         console.log(`📥 Health data received: ${filename} (${(sizeBytes / 1024).toFixed(1)} KB)`);
+
+        // 2. Sync to Notion (Primary)
+        let notionSync = { synced: 0, errors: 0 };
+        try {
+            console.log('🔄 Syncing to Health Metrics Notion DB...');
+            notionSync = await syncHealthData(req.body);
+            console.log(`✅ Synced ${notionSync.synced} days to Notion (${notionSync.errors} errors)`);
+        } catch (syncErr) {
+            console.error('⚠️ Notion sync failed:', syncErr);
+            // We don't fail the request because we successfully saved the file
+        }
 
         res.json({
             status: 'ok',
             filename,
             sizeBytes,
+            notion: notionSync,
             timestamp: new Date().toISOString(),
         });
     } catch (err) {
