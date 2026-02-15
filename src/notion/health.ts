@@ -2,7 +2,7 @@
  * Notion Health Check Module
  * Analyzes Goals → Projects → Tasks hierarchy for issues
  */
-import dayjs from 'dayjs';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     fetchTasks, fetchProjects, fetchGoals,
     getTitle, getDescription, hasRelation, isCompleted, getDate,
@@ -43,7 +43,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
     // console.log(`Fetched: ${tasks.length} tasks, ${projects.length} projects, ${goals.length} goals`);
 
     const activeTasks = tasks.filter(t => !isCompleted(t));
-    const today = dayjs();
+    const today = Temporal.Now.plainDateISO();
 
     // 1. Orphaned tasks (no Project relation)
     const orphanedTasks = activeTasks.filter(t => !hasRelation(t));
@@ -54,13 +54,15 @@ export async function runHealthCheck(): Promise<HealthReport> {
     // 3. Tasks with overdue DUE DATE
     const overdueDueDate = activeTasks.filter(t => {
         const due = getDate(t, 'Due Date') || getDate(t, 'Due');
-        return due && dayjs(due).isBefore(today, 'day');
+        if (!due) return false;
+        return Temporal.PlainDate.compare(Temporal.PlainDate.from(due), today) < 0;
     });
 
     // 4. Tasks with overdue SCHEDULED DATE (new check)
     const overdueScheduled = activeTasks.filter(t => {
         const scheduled = getDate(t, 'Scheduled');
-        return scheduled && dayjs(scheduled).isBefore(today, 'day');
+        if (!scheduled) return false;
+        return Temporal.PlainDate.compare(Temporal.PlainDate.from(scheduled), today) < 0;
     });
 
     // 5. Tasks missing required fields (title, status, priority)
@@ -130,7 +132,8 @@ export function formatHealthReport(report: HealthReport): string {
     lines.push(`🔴 <b>Overdue (due date passed)</b>: ${issues.overdueDueDate.length}`);
     issues.overdueDueDate.forEach(t => {
         const due = getDate(t, 'Due Date') || getDate(t, 'Due');
-        lines.push(`  • <a href="${t.url}">${escapeHtml(getTitle(t))}</a> — due ${dayjs(due).format('D MMM')}`);
+        const dateStr = due ? Temporal.PlainDate.from(due).toLocaleString('en-US', { day: 'numeric', month: 'short' }) : 'Unknown';
+        lines.push(`  • <a href="${t.url}">${escapeHtml(getTitle(t))}</a> — due ${dateStr}`);
     });
     lines.push('');
 
@@ -138,7 +141,8 @@ export function formatHealthReport(report: HealthReport): string {
     lines.push(`🟠 <b>Overdue (scheduled date passed)</b>: ${issues.overdueScheduled.length}`);
     issues.overdueScheduled.forEach(t => {
         const scheduled = getDate(t, 'Scheduled');
-        lines.push(`  • <a href="${t.url}">${escapeHtml(getTitle(t))}</a> — scheduled ${dayjs(scheduled).format('D MMM')}`);
+        const dateStr = scheduled ? Temporal.PlainDate.from(scheduled).toLocaleString('en-US', { day: 'numeric', month: 'short' }) : 'Unknown';
+        lines.push(`  • <a href="${t.url}">${escapeHtml(getTitle(t))}</a> — scheduled ${dateStr}`);
     });
     lines.push('');
 

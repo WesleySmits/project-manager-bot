@@ -2,6 +2,7 @@
  * Notion Bot - Main Entry Point
  * Telegram bot for Notion task management
  */
+import '@js-temporal/polyfill';
 import 'dotenv/config';
 import { Telegraf, Context } from 'telegraf';
 import * as http from 'http';

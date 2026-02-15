@@ -5,7 +5,7 @@
  * /tasks due <today|tomorrow|overdue>
  */
 import { Context } from 'telegraf';
-import dayjs from 'dayjs';
+import { Temporal } from '@js-temporal/polyfill';
 import {
     search, getPage, getTitle, getDescription, getDate, hasRelation,
     NotionPage
@@ -30,13 +30,17 @@ function formatTaskDetail(page: NotionPage): string {
     text += `────────────────\n`;
     text += `🏷 Status: ${status} | Priority: ${priority}\n`;
 
+    const today = Temporal.Now.plainDateISO();
+
     if (due) {
-        const isOverdue = dayjs(due).isBefore(dayjs(), 'day');
-        text += `📅 Due: ${dayjs(due).format('D MMM YYYY')}${isOverdue ? ' ⚠️ OVERDUE' : ''}\n`;
+        const isOverdue = Temporal.PlainDate.compare(Temporal.PlainDate.from(due), today) < 0;
+        const dateStr = Temporal.PlainDate.from(due).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        text += `📅 Due: ${dateStr}${isOverdue ? ' ⚠️ OVERDUE' : ''}\n`;
     }
     if (scheduled) {
-        const isOverdue = dayjs(scheduled).isBefore(dayjs(), 'day');
-        text += `🗓 Scheduled: ${dayjs(scheduled).format('D MMM YYYY')}${isOverdue ? ' ⚠️ OVERDUE' : ''}\n`;
+        const isOverdue = Temporal.PlainDate.compare(Temporal.PlainDate.from(scheduled), today) < 0;
+        const dateStr = Temporal.PlainDate.from(scheduled).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        text += `🗓 Scheduled: ${dateStr}${isOverdue ? ' ⚠️ OVERDUE' : ''}\n`;
     }
 
     // Relations (Projects/Goals)

@@ -4,8 +4,8 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import dayjs from 'dayjs';
 import { Context } from 'telegraf';
+import { Temporal } from '@js-temporal/polyfill';
 
 // Constants
 const ALLOWED_USER_ID = parseInt(process.env.TELEGRAM_CHAT_ID || '1962079073');
@@ -15,7 +15,7 @@ const LOG_FILE = path.join(__dirname, '../../logs/pm_commands.log');
  * Append to log file
  */
 export function logToDisk(message: string): void {
-    const timestamp = dayjs().format('YYYY-MM-DD HH:mm:ss');
+    const timestamp = Temporal.Now.plainDateTimeISO().toString().replace('T', ' ').split('.')[0];
     const line = `[${timestamp}] ${message}\n`;
 
     // Ensure directory exists

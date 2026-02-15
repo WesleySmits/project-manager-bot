@@ -2,8 +2,8 @@
  * Morning Briefing Module
  * Generates and sends daily morning briefing with prioritized tasks + "why" explanations
  */
-import dayjs from 'dayjs';
 import { Telegraf } from 'telegraf';
+import { Temporal } from '@js-temporal/polyfill';
 import { getTodayTasks } from './todayTasks';
 import { runHealthCheck } from '../notion/health';
 import { fetchGoals } from '../notion/client';
@@ -22,7 +22,6 @@ export async function generateMorningBriefing(): Promise<string> {
     ]);
 
     const lines: string[] = [];
-    const today = dayjs();
 
     // 1. HEADER
     lines.push('☀️ *Good morning!*');
@@ -83,7 +82,8 @@ export async function sendMorningBriefing(bot: Telegraf): Promise<void> {
     try {
         const message = await generateMorningBriefing();
         await bot.telegram.sendMessage(CHAT_ID, message, { parse_mode: 'Markdown' });
-        console.log(`✅ Morning briefing sent at ${dayjs().format('YYYY-MM-DD HH:mm:ss')}`);
+        const timestamp = Temporal.Now.plainDateTimeISO().toString().replace('T', ' ').split('.')[0];
+        console.log(`✅ Morning briefing sent at ${timestamp}`);
     } catch (err) {
         console.error('❌ Morning briefing error:', err);
         throw err;

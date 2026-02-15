@@ -2,7 +2,7 @@
  * Today Tasks Command
  * Fetches and scores tasks to show the most important items for today
  */
-import dayjs from 'dayjs';
+import { Temporal } from '@js-temporal/polyfill';
 import { fetchTasks, getTitle, isCompleted, getDate, hasRelation, NotionPage } from '../notion/client';
 
 interface ScoredTask {
@@ -22,13 +22,13 @@ interface ScoredTask {
  */
 export function scoreTask(task: NotionPage): number {
     const props = task.properties || {};
-    const today = dayjs();
+    const today = Temporal.Now.plainDateISO();
 
     // Due date score (40% weight)
     let dueScore = 0;
     const dueDate = getDate(task, 'Due Date') || getDate(task, 'Due');
     if (dueDate) {
-        const daysUntilDue = dayjs(dueDate).diff(today, 'day');
+        const daysUntilDue = Temporal.PlainDate.from(dueDate).since(today).days;
         if (daysUntilDue < 0) {
             // Overdue - maximum urgency
             dueScore = 1.0;
@@ -51,7 +51,7 @@ export function scoreTask(task: NotionPage): number {
     let scheduledScore = 0;
     const scheduledDate = getDate(task, 'Scheduled');
     if (scheduledDate) {
-        const daysUntilScheduled = dayjs(scheduledDate).diff(today, 'day');
+        const daysUntilScheduled = Temporal.PlainDate.from(scheduledDate).since(today).days;
         if (daysUntilScheduled < 0) {
             // Scheduled in the past - should have been done
             scheduledScore = 1.0;
@@ -114,7 +114,7 @@ function getPriorityEmoji(priority: string | null | undefined): string {
  */
 function formatDate(date: string | null): string | null {
     if (!date) return null;
-    return dayjs(date).format('D MMM');
+    return Temporal.PlainDate.from(date).toLocaleString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 /**
@@ -149,12 +149,12 @@ export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
  * Generate dynamic summary of why these tasks matter
  */
 function generateTaskSummary(tasks: ScoredTask[]): string {
-    const today = dayjs();
+    const today = Temporal.Now.plainDateISO();
     const lines: string[] = [];
 
     const overdueCount = tasks.filter(t =>
-        (t.dueDate && dayjs(t.dueDate).isBefore(today, 'day')) ||
-        (t.scheduledDate && dayjs(t.scheduledDate).isBefore(today, 'day'))
+        (t.dueDate && Temporal.PlainDate.compare(Temporal.PlainDate.from(t.dueDate), today) < 0) ||
+        (t.scheduledDate && Temporal.PlainDate.compare(Temporal.PlainDate.from(t.scheduledDate), today) < 0)
     ).length;
 
     const highPriorityCount = tasks.filter(t =>
@@ -163,11 +163,11 @@ function generateTaskSummary(tasks: ScoredTask[]): string {
     ).length;
 
     const dueTodayCount = tasks.filter(t =>
-        t.dueDate && dayjs(t.dueDate).isSame(today, 'day')
+        t.dueDate && Temporal.PlainDate.from(t.dueDate).equals(today)
     ).length;
 
     const scheduledTodayCount = tasks.filter(t =>
-        t.scheduledDate && dayjs(t.scheduledDate).isSame(today, 'day')
+        t.scheduledDate && Temporal.PlainDate.from(t.scheduledDate).equals(today)
     ).length;
 
     lines.push('');
@@ -203,21 +203,23 @@ export function formatTodayTasks(tasks: ScoredTask[]): string {
     }
 
     const lines = ['📋 *Your top tasks for today:*', ''];
-    const today = dayjs();
+    const today = Temporal.Now.plainDateISO();
 
     tasks.forEach((task, i) => {
         const emoji = getPriorityEmoji(task.priority);
         let dateInfo = '';
 
         if (task.dueDate) {
-            const isOverdue = dayjs(task.dueDate).isBefore(today, 'day');
-            const isToday = dayjs(task.dueDate).isSame(today, 'day');
+            const d = Temporal.PlainDate.from(task.dueDate);
+            const isOverdue = Temporal.PlainDate.compare(d, today) < 0;
+            const isToday = d.equals(today);
             dateInfo = `Due: ${formatDate(task.dueDate)}`;
             if (isOverdue) dateInfo += ' ⚠️ OVERDUE';
             else if (isToday) dateInfo += ' (today)';
         } else if (task.scheduledDate) {
-            const isOverdue = dayjs(task.scheduledDate).isBefore(today, 'day');
-            const isToday = dayjs(task.scheduledDate).isSame(today, 'day');
+            const d = Temporal.PlainDate.from(task.scheduledDate);
+            const isOverdue = Temporal.PlainDate.compare(d, today) < 0;
+            const isToday = d.equals(today);
             dateInfo = `Scheduled: ${formatDate(task.scheduledDate)}`;
             if (isOverdue) dateInfo += ' ⚠️ MISSED';
             else if (isToday) dateInfo += ' (today)';
