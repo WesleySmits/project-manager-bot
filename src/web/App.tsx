@@ -8,6 +8,7 @@ import Goals from './pages/Goals';
 import Health from './pages/Health';
 import Insights from './pages/Insights';
 import HealthData from './pages/HealthData';
+import HealthDashboard from './pages/HealthDashboard';
 import { prefetchAll } from './client';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
                     <Route path="/goals" element={<Goals />} />
                     <Route path="/health" element={<Health />} />
                     <Route path="/insights" element={<Insights />} />
+                    <Route path="/body" element={<HealthDashboard />} />
                     <Route path="/health-data" element={<HealthData />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

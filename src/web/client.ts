@@ -172,6 +172,17 @@ export interface HealthExportsResponse {
     total: number;
 }
 
+export interface MetricData {
+    name: string;
+    units: string;
+    data: Array<Record<string, unknown>>;
+}
+
+export interface MetricsResponse {
+    metrics: MetricData[];
+    dateRange: { from: string; to: string };
+}
+
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 export const api = {
@@ -185,6 +196,12 @@ export const api = {
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
     healthExports: () => get<HealthExportsResponse>('/health-data/exports'),
     healthExport: (filename: string) => get<unknown>(`/health-data/exports/${filename}`, true),
+    healthMetrics: (names: string[], from?: string, to?: string) => {
+        const params = new URLSearchParams({ names: names.join(',') });
+        if (from) params.set('from', from);
+        if (to) params.set('to', to);
+        return get<MetricsResponse>(`/health-data/metrics?${params.toString()}`, true);
+    },
 };
 
 // ─── Prefetch ────────────────────────────────────────────────────────────────

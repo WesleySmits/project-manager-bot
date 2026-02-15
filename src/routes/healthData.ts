@@ -9,8 +9,30 @@
  */
 import { Router, Request, Response } from 'express';
 import { saveExport, listExports, getExport, getLatestExport } from '../health/store';
+import { getMetrics } from '../health/metrics';
 
 const router = Router();
+
+/** Query metrics by name and optional date range */
+router.get('/metrics', (req: Request, res: Response) => {
+    try {
+        const namesParam = req.query.names as string | undefined;
+        if (!namesParam) {
+            res.status(400).json({ error: 'Missing required query parameter: names' });
+            return;
+        }
+        const names = namesParam.split(',').map(n => n.trim()).filter(Boolean);
+        const from = req.query.from as string | undefined;
+        const to = req.query.to as string | undefined;
+
+        const result = getMetrics(names, from, to);
+        res.json(result);
+    } catch (err) {
+        console.error('Health metrics error:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: `Failed to query health metrics: ${message}` });
+    }
+});
 
 /** Receive a health data export from Apple Health Auto Export */
 router.post('/', (req: Request, res: Response) => {

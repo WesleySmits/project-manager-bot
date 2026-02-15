@@ -14,7 +14,8 @@ const analysisItems = [
 ];
 
 const personalItems = [
-    { to: '/health-data', label: 'Health Data', icon: '💓' },
+    { to: '/body', label: 'Body', icon: '💪' },
+    { to: '/health-data', label: 'Raw Exports', icon: '💾' },
 ];
 
 export default function Sidebar() {

@@ -687,3 +687,35 @@ tbody td.title-col {
     color: var(--text-primary);
     margin-bottom: 12px;
 }
+
+/* ─── Health Dashboard ────────────────────────────────────────────────────── */
+.hd-range-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.hd-range-pill {
+    padding: 6px 14px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    transition: all var(--duration) var(--ease);
+    cursor: pointer;
+}
+
+.hd-range-pill:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--border-default);
+}
+
+.hd-range-pill.active {
+    background: var(--accent-subtle);
+    color: var(--accent);
+    border-color: var(--accent);
+}
