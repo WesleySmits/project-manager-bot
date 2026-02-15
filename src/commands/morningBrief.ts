@@ -2,7 +2,7 @@
  * Morning Briefing Module
  * Generates and sends daily morning briefing with prioritized tasks + "why" explanations
  */
-import { Telegraf } from 'telegraf';
+import { Telegraf, Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
 import { getTodayTasks } from './todayTasks';
 import { runHealthCheck } from '../notion/health';
@@ -87,5 +87,19 @@ export async function sendMorningBriefing(bot: Telegraf): Promise<void> {
     } catch (err) {
         console.error('❌ Morning briefing error:', err);
         throw err;
+    }
+}
+
+/**
+ * Handle /morning command
+ */
+export async function handleMorningBriefing(ctx: Context): Promise<void> {
+    try {
+        await ctx.replyWithChatAction('typing');
+        const message = await generateMorningBriefing();
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('Morning brief command error:', err);
+        await ctx.reply('❌ Failed to generate morning briefing.');
     }
 }

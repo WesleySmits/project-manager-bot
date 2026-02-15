@@ -15,7 +15,7 @@ import {
 import { runStrategyAnalysis, formatStrategyReport } from './src/pm/strategy';
 import { getStrategicAdvice } from './src/ai/gemini';
 import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
-import { sendMorningBriefing } from './src/commands/morningBrief';
+import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morningBrief';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -69,6 +69,7 @@ bot.command('today_tasks', async (ctx: Context) => {
 
 // /notion_health command
 bot.command('notion_health', handleNotionHealth);
+bot.command('morning', handleMorningBriefing);
 
 // PM Commands
 bot.command('task', handleTaskCommand);
@@ -150,6 +151,7 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
     try {
         // Set Telegram Command Menu
         bot.telegram.setMyCommands([
+            { command: 'morning', description: '☀️ Morning briefing' },
             { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
             { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
             { command: 'improve', description: '✨ AI Advice on what to fix next' },
