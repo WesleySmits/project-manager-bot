@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { api, UnauthorizedError } from '../client';
 
 interface AuthContextType {
@@ -61,11 +62,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     if (isLoading) return <div className="loading-state">Loading...</div>;
 
     if (!user) {
-        // Redirect logic handled by router or here
-        // For now, simpler to just return null and let parent/router redirect
-        // But since we are using React Router, we should ideally use Navigate
-        // We'll handle this in App.tsx
-        return null;
+        return <Navigate to="/login" replace />;
     }
 
     return <>{children}</>;
