@@ -5,6 +5,12 @@ import { Request, Response, NextFunction } from 'express';
  * Protects all routes by requiring a username and password
  */
 export const basicAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+    // Skip auth in development mode
+    if (process.env.NODE_ENV === 'development') {
+        next();
+        return;
+    }
+
     const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER;
     const BASIC_AUTH_PASS = process.env.BASIC_AUTH_PASS;
 

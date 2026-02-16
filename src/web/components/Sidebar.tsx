@@ -18,51 +18,62 @@ const personalItems = [
     { to: '/health-data', label: 'Raw Exports', icon: '💾' },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     return (
-        <aside className="sidebar">
-            <div className="sidebar-brand">
-                <span className="brand-dot" />
-                PM
-            </div>
-            <nav className="sidebar-nav">
-                <div className="sidebar-section-label">Navigate</div>
-                {navItems.map(item => (
-                    <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.to === '/'}
-                        className={({ isActive }) => isActive ? 'active' : ''}
-                    >
-                        <span className="nav-icon">{item.icon}</span>
-                        {item.label}
-                    </NavLink>
-                ))}
+        <>
+            <div className={`sidebar-overlay ${isOpen ? 'open' : ''}`} onClick={onClose} />
+            <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+                <div className="sidebar-brand">
+                    <span className="brand-dot" />
+                    PM
+                </div>
+                <nav className="sidebar-nav">
+                    <div className="sidebar-section-label">Navigate</div>
+                    {navItems.map(item => (
+                        <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.to === '/'}
+                            className={({ isActive }) => isActive ? 'active' : ''}
+                            onClick={onClose}
+                        >
+                            <span className="nav-icon">{item.icon}</span>
+                            {item.label}
+                        </NavLink>
+                    ))}
 
-                <div className="sidebar-section-label">Analysis</div>
-                {analysisItems.map(item => (
-                    <NavLink
-                        key={item.to}
-                        to={item.to}
-                        className={({ isActive }) => isActive ? 'active' : ''}
-                    >
-                        <span className="nav-icon">{item.icon}</span>
-                        {item.label}
-                    </NavLink>
-                ))}
+                    <div className="sidebar-section-label">Analysis</div>
+                    {analysisItems.map(item => (
+                        <NavLink
+                            key={item.to}
+                            to={item.to}
+                            className={({ isActive }) => isActive ? 'active' : ''}
+                            onClick={onClose}
+                        >
+                            <span className="nav-icon">{item.icon}</span>
+                            {item.label}
+                        </NavLink>
+                    ))}
 
-                <div className="sidebar-section-label">Personal</div>
-                {personalItems.map(item => (
-                    <NavLink
-                        key={item.to}
-                        to={item.to}
-                        className={({ isActive }) => isActive ? 'active' : ''}
-                    >
-                        <span className="nav-icon">{item.icon}</span>
-                        {item.label}
-                    </NavLink>
-                ))}
-            </nav>
-        </aside>
+                    <div className="sidebar-section-label">Personal</div>
+                    {personalItems.map(item => (
+                        <NavLink
+                            key={item.to}
+                            to={item.to}
+                            className={({ isActive }) => isActive ? 'active' : ''}
+                            onClick={onClose}
+                        >
+                            <span className="nav-icon">{item.icon}</span>
+                            {item.label}
+                        </NavLink>
+                    ))}
+                </nav>
+            </aside>
+        </>
     );
 }

@@ -547,12 +547,76 @@ tbody td.title-col {
 @media (max-width: 768px) {
 
     .two-col,
-    .three-col {
+    .three-col,
+    .metrics-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* ─── Mobile Header ───────────────────────────────────────────────────────── */
+.mobile-header {
+    display: none;
+    height: var(--header-height);
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    position: sticky;
+    top: 0;
+    z-index: 90;
+}
+
+.mobile-brand {
+    display: flex;
+    align-items: center;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.02em;
+    gap: 8px;
+}
+
+.mobile-menu-btn {
+    font-size: 20px;
+    padding: 4px;
+    line-height: 1;
+    color: var(--text-secondary);
+}
+
+/* ─── Sidebar Overlay ─────────────────────────────────────────────────────── */
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 95;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration) var(--ease);
+}
+
+.sidebar-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+@media (max-width: 768px) {
+    .mobile-header {
+        display: flex;
     }
 
     .sidebar {
-        display: none;
+        display: flex;
+        /* Override display: none from previous rule if any, or ensure it's flex */
+        transform: translateX(-100%);
+        transition: transform var(--duration) var(--ease);
+        box-shadow: 20px 0 24px rgba(0, 0, 0, 0.2);
+        width: 280px;
+        /* Slightly wider on mobile for better touch */
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
     }
 
     .main-content {
