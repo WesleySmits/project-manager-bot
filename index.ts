@@ -20,6 +20,8 @@ import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
 import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morningBrief';
 import apiRoutes from './src/routes/api';
 import healthDataRoutes from './src/routes/healthData';
+import { basicAuthMiddleware } from './src/middleware/expressAuth';
+import * as crypto from 'crypto';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -155,6 +157,11 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Basic Auth Protection
+// Basic Auth Protection
+// Credentials handled via BASIC_AUTH_USER and BASIC_AUTH_PASS env vars
+app.use(basicAuthMiddleware);
 
 // API routes
 app.use('/api', apiRoutes);
