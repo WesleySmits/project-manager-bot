@@ -525,6 +525,33 @@ tbody td.title-col {
     border-color: var(--border-strong);
 }
 
+/* ─── Forms ───────────────────────────────────────────────────────────────── */
+.form-input {
+    width: 100%;
+    background: var(--bg-active);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+    transition: all var(--duration) var(--ease);
+    outline: none;
+}
+
+.form-input:hover {
+    border-color: var(--border-strong);
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle);
+    background: var(--bg-hover);
+}
+
+.form-input::placeholder {
+    color: var(--text-disabled);
+}
+
 /* ─── Grid Layouts ────────────────────────────────────────────────────────── */
 .two-col {
     display: grid;
