@@ -10,7 +10,7 @@ const COOKIE_NAME = 'auth_token';
  */
 export const jwtAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
     // Skip auth for login/public routes (handled in index.ts via route ordering usually, but good safeguard)
-    if (req.path.startsWith('/api/auth')) {
+    if (req.path.startsWith('/api/auth') || req.path === '/api/health') {
         next();
         return;
     }

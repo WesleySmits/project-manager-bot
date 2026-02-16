@@ -164,11 +164,6 @@ app.use(cookieParser());
 // Auth Routes (Public)
 app.use('/api/auth', authRoutes);
 
-// Public Health Check (for Uptime Kuma)
-app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
 // JWT Auth Protection (Protected Routes)
 app.use(jwtAuthMiddleware);
 
