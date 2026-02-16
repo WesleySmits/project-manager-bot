@@ -26,12 +26,8 @@ export default function Login() {
     };
 
     return (
-        <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '100vh', backgroundColor: 'var(--bg-secondary)',
-            color: 'var(--text-primary)'
-        }}>
-            <div className="card fade-in" style={{ width: 320, padding: 24 }}>
+        <div className="login-page">
+            <div className="card login-card fade-in">
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
                     <div className="mobile-brand" style={{ justifyContent: 'center', marginBottom: 16 }}>
                         <span className="brand-dot" /> PM
@@ -53,24 +49,26 @@ export default function Login() {
                         </div>
                     )}
 
-                    <div style={{ marginBottom: 16 }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Username</label>
+                    <div className="form-group">
+                        <label className="form-label">Username</label>
                         <input
                             type="text"
                             className="form-input"
                             value={username}
                             onChange={e => setUsername(e.target.value)}
+                            placeholder="Enter your username"
                             required
                         />
                     </div>
 
-                    <div style={{ marginBottom: 24 }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 6 }}>Password</label>
+                    <div className="form-group" style={{ marginBottom: 32 }}>
+                        <label className="form-label">Password</label>
                         <input
                             type="password"
                             className="form-input"
                             value={password}
                             onChange={e => setPassword(e.target.value)}
+                            placeholder="••••••••"
                             required
                         />
                     </div>
@@ -78,7 +76,7 @@ export default function Login() {
                     <button
                         type="submit"
                         className="btn btn-primary"
-                        style={{ width: '100%', justifyContent: 'center' }}
+                        style={{ width: '100%', justifyContent: 'center', height: 44 }}
                         disabled={isSubmitting}
                     >
                         {isSubmitting ? 'Signing in…' : 'Sign In'}

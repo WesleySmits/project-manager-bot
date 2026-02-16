@@ -552,6 +552,61 @@ tbody td.title-col {
     color: var(--text-disabled);
 }
 
+/* ─── Forms ───────────────────────────────────────────────────────────────── */
+.login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+}
+
+.login-card {
+    width: 360px;
+    padding: 32px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+}
+
+.form-input {
+    width: 100%;
+    background: var(--bg-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--text-primary);
+    transition: all var(--duration) var(--ease);
+    outline: none;
+    height: 44px;
+    /* Increased height */
+}
+
+.form-input:hover {
+    border-color: var(--border-strong);
+}
+
+.form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle);
+    background: var(--bg-hover);
+}
+
+.form-input::placeholder {
+    color: var(--text-disabled);
+}
+
 /* ─── Grid Layouts ────────────────────────────────────────────────────────── */
 .two-col {
     display: grid;
