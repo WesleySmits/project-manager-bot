@@ -21,12 +21,15 @@ export default function Projects() {
 
     if (loading) return <div className="loading-state"><span className="spinner" /> Loading projects…</div>;
 
-    // Group by status category
-    const active = projects.filter(p => p.statusCategory === 'ACTIVE');
-    const ready = projects.filter(p => p.statusCategory === 'READY');
-    const backlog = projects.filter(p => p.statusCategory === 'BACKLOG');
-    const parked = projects.filter(p => p.statusCategory === 'PARKED');
-    const done = projects.filter(p => p.statusCategory === 'DONE');
+    // Group by status category (excluding evergreen)
+    const active = projects.filter(p => p.statusCategory === 'ACTIVE' && !p.evergreen);
+    const ready = projects.filter(p => p.statusCategory === 'READY' && !p.evergreen);
+    const backlog = projects.filter(p => p.statusCategory === 'BACKLOG' && !p.evergreen);
+    const parked = projects.filter(p => p.statusCategory === 'PARKED' && !p.evergreen);
+    const done = projects.filter(p => p.statusCategory === 'DONE' && !p.evergreen);
+
+    // Evergreen bucket
+    const evergreen = projects.filter(p => p.evergreen);
 
     const sections = [
         { label: 'In Progress', items: active },
@@ -34,6 +37,7 @@ export default function Projects() {
         { label: 'Backlog', items: backlog },
         { label: 'Parked', items: parked },
         { label: 'Completed', items: done },
+        { label: 'Evergreen 🌿', items: evergreen },
     ].filter(s => s.items.length > 0);
 
     return (

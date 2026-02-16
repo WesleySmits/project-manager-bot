@@ -316,6 +316,15 @@ export function getProjectStatusCategory(page: NotionPage): ProjectStatusCategor
 }
 
 /**
+ * Check if a project is marked as "Evergreen" (general buckets that never close)
+ * @param {NotionPage} page - Notion page object
+ * @returns {boolean}
+ */
+export function isEvergreen(page: NotionPage): boolean {
+  return page.properties?.Evergreen?.checkbox === true;
+}
+
+/**
  * Check if a project is blocked (via "Blocked?" checkbox)
  * @param {Object} page - Notion page object
  * @returns {boolean}
@@ -325,13 +334,13 @@ export function isBlocked(page: NotionPage): boolean {
 }
 
 /**
- * Check if a project is truly active (In Progress + not blocked)
+ * Check if a project is truly active (In Progress + not blocked + not evergreen)
  * Use this for accurate "active project" counts in /strategy and /improve
  * @param {Object} page - Notion page object
  * @returns {boolean}
  */
 export function isActiveProject(page: NotionPage): boolean {
-  return getProjectStatusCategory(page) === 'ACTIVE' && !isBlocked(page);
+  return getProjectStatusCategory(page) === 'ACTIVE' && !isBlocked(page) && !isEvergreen(page);
 }
 
 /**

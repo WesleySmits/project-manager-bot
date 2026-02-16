@@ -39,7 +39,9 @@ if (!NOTION_TOKEN) {
     process.exit(1);
 }
 
+console.log('🚀 Initializing Telegraf...');
 const bot = new Telegraf(TELEGRAM_TOKEN);
+console.log('✅ Telegraf initialized');
 
 // Middleware (Security & Logging)
 bot.use(authMiddleware);
@@ -149,6 +151,7 @@ bot.action(/^pm:(approve|reject):(.+)$/, handleCallbackResolve);
 bot.catch((err, ctx) => {
     console.error(`Bot error for ${ctx.updateType}:`, err);
 });
+console.log('✅ Telegram bot configured');
 
 // Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
@@ -156,10 +159,12 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // ─── Express Server ──────────────────────────────────────────────────────────
 
+console.log('🚀 Initializing Express...');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
+console.log('✅ Express initialized');
 
 // Auth Routes (Public)
 app.use('/api/auth', authRoutes);
@@ -209,6 +214,7 @@ app.listen(PORT, () => {
 });
 
 // Start Telegram bot (non-blocking — Express stays up if this fails)
+console.log('🚀 Updating Telegram commands...');
 bot.telegram.setMyCommands([
     { command: 'morning', description: '☀️ Morning briefing' },
     { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
@@ -222,6 +228,7 @@ bot.telegram.setMyCommands([
     console.warn('⚠️ Failed to update Telegram commands:', err.message);
 });
 
+console.log('🚀 Launching Telegram bot...');
 bot.launch().then(() => {
     console.log('🤖 Notion Bot started (polling mode)');
 }).catch(err => {

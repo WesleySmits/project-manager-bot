@@ -117,6 +117,7 @@ export interface ProjectItem {
     statusCategory: string;
     blocked: boolean;
     active: boolean;
+    evergreen: boolean;
     description: string | null;
     url: string;
     taskCount: number;

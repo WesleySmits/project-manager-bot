@@ -2,7 +2,7 @@
  * REST API Routes for Web Interface
  */
 import { Router, Request, Response } from 'express';
-import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, getProjectStatusCategory, isBlocked, getDescription, NotionPage } from '../notion/client';
+import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage } from '../notion/client';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
 import { getTodayTasks } from '../commands/todayTasks';
@@ -34,6 +34,7 @@ function serializeProject(p: NotionPage) {
         statusCategory: getProjectStatusCategory(p),
         blocked: isBlocked(p),
         active: isActiveProject(p),
+        evergreen: isEvergreen(p),
         description: getDescription(p),
         url: p.url,
     };
