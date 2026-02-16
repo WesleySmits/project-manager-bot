@@ -551,6 +551,10 @@ tbody td.title-col {
     .metrics-grid {
         grid-template-columns: 1fr;
     }
+
+    .app-layout {
+        flex-direction: column;
+    }
 }
 
 /* ─── Mobile Header ───────────────────────────────────────────────────────── */
