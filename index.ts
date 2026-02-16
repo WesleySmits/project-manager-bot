@@ -19,9 +19,11 @@ import { getStrategicAdvice } from './src/ai/gemini';
 import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
 import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morningBrief';
 import apiRoutes from './src/routes/api';
+import authRoutes from './src/routes/auth';
 import healthDataRoutes from './src/routes/healthData';
-import { basicAuthMiddleware } from './src/middleware/expressAuth';
+import { jwtAuthMiddleware } from './src/middleware/expressAuth';
 import * as crypto from 'crypto';
+import cookieParser from 'cookie-parser';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -157,11 +159,13 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.use(cookieParser());
 
-// Basic Auth Protection
-// Basic Auth Protection
-// Credentials handled via BASIC_AUTH_USER and BASIC_AUTH_PASS env vars
-app.use(basicAuthMiddleware);
+// Auth Routes (Public)
+app.use('/api/auth', authRoutes);
+
+// JWT Auth Protection (Protected Routes)
+app.use(jwtAuthMiddleware);
 
 // API routes
 app.use('/api', apiRoutes);

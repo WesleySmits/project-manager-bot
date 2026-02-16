@@ -43,15 +43,28 @@ export function clearCache(): void {
 
 // ─── HTTP ────────────────────────────────────────────────────────────────────
 
+// ─── HTTP ────────────────────────────────────────────────────────────────────
+
+export class UnauthorizedError extends Error {
+    constructor() { super('Unauthorized'); this.name = 'UnauthorizedError'; }
+}
+
+async function handleResponse<T>(res: Response): Promise<T> {
+    if (res.status === 401) {
+        throw new UnauthorizedError();
+    }
+    if (!res.ok) throw new Error(`API failed: ${res.status}`);
+    return res.json();
+}
+
 async function get<T>(path: string, skipCache = false): Promise<T> {
     if (!skipCache) {
         const cached = cacheGet<T>(path);
         if (cached) return cached;
     }
     const res = await fetch(`${BASE}${path}`);
-    if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-    const data: T = await res.json();
-    cacheSet(path, data);
+    const data = await handleResponse<T>(res);
+    if (!skipCache) cacheSet(path, data);
     return data;
 }
 
@@ -61,8 +74,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-    return res.json();
+    return handleResponse<T>(res);
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -183,9 +195,12 @@ export interface MetricsResponse {
     dateRange: { from: string; to: string };
 }
 
-// ─── API Methods ─────────────────────────────────────────────────────────────
-
 export const api = {
+    // Auth
+    login: (username: string, password: string) => post<{ success: boolean, user: { username: string } }>('/auth/login', { username, password }),
+    logout: () => post<{ success: boolean }>('/auth/logout'),
+    me: () => get<{ authenticated: boolean, user?: { username: string } }>('/auth/me', true),
+
     dashboard: () => get<DashboardData>('/dashboard'),
     tasks:     () => get<TaskItem[]>('/tasks'),
     projects:  () => get<ProjectItem[]>('/projects'),

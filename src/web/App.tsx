@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import MobileHeader from './components/MobileHeader';
 import Dashboard from './pages/Dashboard';
@@ -10,9 +10,11 @@ import Health from './pages/Health';
 import Insights from './pages/Insights';
 import HealthData from './pages/HealthData';
 import HealthDashboard from './pages/HealthDashboard';
+import Login from './pages/Login';
+import { AuthProvider, RequireAuth } from './context/AuthContext';
 import { prefetchAll } from './client';
 
-export default function App() {
+function ProtectedLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     useEffect(() => { prefetchAll(); }, []);
@@ -22,7 +24,23 @@ export default function App() {
             <MobileHeader onMenuClick={() => setSidebarOpen(true)} />
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
             <main className="main-content">
-                <Routes>
+                <Outlet />
+            </main>
+        </div>
+    );
+}
+
+export default function App() {
+    return (
+        <AuthProvider>
+            <Routes>
+                <Route path="/login" element={<Login />} />
+
+                <Route element={
+                    <RequireAuth>
+                        <ProtectedLayout />
+                    </RequireAuth>
+                }>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/tasks" element={<Tasks />} />
                     <Route path="/projects" element={<Projects />} />
@@ -31,9 +49,10 @@ export default function App() {
                     <Route path="/insights" element={<Insights />} />
                     <Route path="/body" element={<HealthDashboard />} />
                     <Route path="/health-data" element={<HealthData />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </main>
-        </div>
+                </Route>
+
+                <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+        </AuthProvider>
     );
 }
