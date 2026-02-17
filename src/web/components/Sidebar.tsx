@@ -11,6 +11,7 @@ const navItems = [
 const analysisItems = [
     { to: '/health', label: 'Health', icon: '♡' },
     { to: '/insights', label: 'Insights', icon: '✦' },
+    { to: '/analytics', label: 'Analytics', icon: '📈' },
 ];
 
 const personalItems = [

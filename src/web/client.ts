@@ -196,6 +196,23 @@ export interface MetricsResponse {
     dateRange: { from: string; to: string };
 }
 
+export interface AnalyticsSnapshot {
+    date: string;
+    timestamp: string;
+    metrics: {
+        tasksCompletedToday: number;
+        tasksCompletedThisWeek: number;
+        tasksCompletedThisMonth: number;
+        projectsCompletedThisWeek: number;
+        projectsCompletedThisMonth: number;
+        avgTaskCompletionDays: number;
+        avgProjectCompletionDays: number;
+        avgTaskActiveDays: number;
+        activeTasksCount: number;
+        activeProjectsCount: number;
+    };
+}
+
 export const api = {
     // Auth
     login: (username: string, password: string) => post<{ success: boolean, user: { username: string } }>('/auth/login', { username, password }),
@@ -217,6 +234,11 @@ export const api = {
         if (from) params.set('from', from);
         if (to) params.set('to', to);
         return get<MetricsResponse>(`/health-data/metrics?${params.toString()}`, true);
+    },
+    analytics: {
+        summary: () => get<AnalyticsSnapshot>('/analytics/summary'),
+        history: () => get<AnalyticsSnapshot[]>('/analytics/history'),
+        refresh: () => post<AnalyticsSnapshot>('/analytics/refresh'),
     },
 };
 

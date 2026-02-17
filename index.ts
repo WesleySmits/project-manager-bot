@@ -21,9 +21,13 @@ import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morni
 import apiRoutes from './src/routes/api';
 import authRoutes from './src/routes/auth';
 import healthDataRoutes from './src/routes/healthData';
+import analyticsRoutes from './src/routes/analytics';
 import { jwtAuthMiddleware } from './src/middleware/expressAuth';
 import * as crypto from 'crypto';
 import cookieParser from 'cookie-parser';
+import { collectDailyMetrics } from './src/analytics/collector';
+import { getLatestSnapshot } from './src/analytics/store';
+import { Temporal } from '@js-temporal/polyfill';
 
 // Validate environment
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -175,6 +179,7 @@ app.use(jwtAuthMiddleware);
 // API routes
 app.use('/api', apiRoutes);
 app.use('/api/health-data', healthDataRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Morning briefing endpoint (legacy)
 app.post('/morning-brief', async (_req, res) => {
@@ -235,4 +240,25 @@ bot.launch().then(() => {
     console.error('⚠️ Telegram bot failed to start:', err.message);
     console.log('   Express API is still running — web interface available.');
 });
+
+// ─── Scheduler ───────────────────────────────────────────────────────────────
+
+// Check every hour if we need to run daily analytics
+setInterval(async () => {
+    try {
+        const now = Temporal.Now.plainDateISO();
+        const latest = await getLatestSnapshot();
+
+        // If no snapshot for today, run valid daily collection
+        // We run it if the last snapshot is NOT from today
+        // This ensures one run per day (first time we check after midnight)
+        if (!latest || latest.date !== now.toString()) {
+            console.log('📊 Running daily analytics collection...');
+            await collectDailyMetrics();
+            console.log('✅ Daily analytics collected');
+        }
+    } catch (err) {
+        console.error('❌ Daily analytics scheduler failed:', err);
+    }
+}, 60 * 60 * 1000); // Check every hour
 
