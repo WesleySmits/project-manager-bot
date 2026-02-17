@@ -280,4 +280,153 @@ router.post('/ai/motivation', async (_req: Request, res: Response) => {
     }
 });
 
+/** Actionable projects - only projects that can be acted on today */
+router.get('/projects/actionable', async (_req: Request, res: Response) => {
+    try {
+        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
+        const activeTasks = tasks.filter(t => !isCompleted(t));
+
+        // Actionable = active status + not blocked + not evergreen
+        const actionableProjects = projects.filter(isActiveProject);
+
+        const serialized = actionableProjects.map(p => {
+            const linkedTasks = activeTasks.filter(t => {
+                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
+                return ids.includes(p.id);
+            });
+            
+            const lastEdited = new Date(p.last_edited_time);
+            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
+            
+            return {
+                ...serializeProject(p),
+                taskCount: linkedTasks.length,
+                lastUpdated: p.last_edited_time,
+                daysSinceUpdate,
+                stalled: daysSinceUpdate > 14, // Flag projects not touched in 2 weeks
+            };
+        });
+
+        res.json({
+            count: serialized.length,
+            projects: serialized,
+        });
+    } catch (err) {
+        console.error('Actionable projects API error:', err);
+        res.status(500).json({ error: 'Failed to load actionable projects' });
+    }
+});
+
+/** Blocked projects - waiting on external dependencies */
+router.get('/projects/blocked', async (_req: Request, res: Response) => {
+    try {
+        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
+        const activeTasks = tasks.filter(t => !isCompleted(t));
+
+        // Blocked = has active/ready status AND blocked checkbox
+        const blockedProjects = projects.filter(p => {
+            const category = getProjectStatusCategory(p);
+            return (category === 'ACTIVE' || category === 'READY') && isBlocked(p);
+        });
+
+        const serialized = blockedProjects.map(p => {
+            const linkedTasks = activeTasks.filter(t => {
+                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
+                return ids.includes(p.id);
+            });
+            
+            const lastEdited = new Date(p.last_edited_time);
+            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
+            
+            return {
+                ...serializeProject(p),
+                taskCount: linkedTasks.length,
+                lastUpdated: p.last_edited_time,
+                daysSinceUpdate,
+                needsFollowUp: daysSinceUpdate > 7, // Flag if no update in a week
+            };
+        });
+
+        res.json({
+            count: serialized.length,
+            projects: serialized,
+        });
+    } catch (err) {
+        console.error('Blocked projects API error:', err);
+        res.status(500).json({ error: 'Failed to load blocked projects' });
+    }
+});
+
+/** Project summary - high-level overview for daily briefings */
+router.get('/projects/summary', async (_req: Request, res: Response) => {
+    try {
+        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
+        const activeTasks = tasks.filter(t => !isCompleted(t));
+
+        const actionable = projects.filter(isActiveProject);
+        const blocked = projects.filter(p => {
+            const category = getProjectStatusCategory(p);
+            return (category === 'ACTIVE' || category === 'READY') && isBlocked(p);
+        });
+        const evergreen = projects.filter(p => {
+            const category = getProjectStatusCategory(p);
+            return (category === 'ACTIVE' || category === 'READY') && isEvergreen(p);
+        });
+        
+        // Find stalled projects (actionable but not updated in 14+ days)
+        const stalled = actionable.filter(p => {
+            const lastEdited = new Date(p.last_edited_time);
+            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
+            return daysSinceUpdate > 14;
+        });
+
+        // Count tasks per project type
+        const actionableTaskCount = actionable.reduce((sum, p) => {
+            const count = activeTasks.filter(t => {
+                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
+                return ids.includes(p.id);
+            }).length;
+            return sum + count;
+        }, 0);
+
+        res.json({
+            overview: {
+                actionable: actionable.length,
+                blocked: blocked.length,
+                evergreen: evergreen.length,
+                stalled: stalled.length,
+                total: projects.filter(p => {
+                    const cat = getProjectStatusCategory(p);
+                    return cat === 'ACTIVE' || cat === 'READY';
+                }).length,
+            },
+            actionableProjects: actionable.map(p => ({
+                title: getTitle(p),
+                url: p.url,
+                taskCount: activeTasks.filter(t => {
+                    const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
+                    return ids.includes(p.id);
+                }).length,
+            })),
+            blockedProjects: blocked.map(p => ({
+                title: getTitle(p),
+                url: p.url,
+                daysSinceUpdate: Math.floor((Date.now() - new Date(p.last_edited_time).getTime()) / (1000 * 60 * 60 * 24)),
+            })),
+            stalledProjects: stalled.map(p => ({
+                title: getTitle(p),
+                url: p.url,
+                daysSinceUpdate: Math.floor((Date.now() - new Date(p.last_edited_time).getTime()) / (1000 * 60 * 60 * 24)),
+            })),
+            metrics: {
+                actionableTaskCount,
+                avgTasksPerActionableProject: actionable.length > 0 ? (actionableTaskCount / actionable.length).toFixed(1) : '0',
+            },
+        });
+    } catch (err) {
+        console.error('Project summary API error:', err);
+        res.status(500).json({ error: 'Failed to generate project summary' });
+    }
+});
+
 export default router;
