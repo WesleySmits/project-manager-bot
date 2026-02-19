@@ -17,6 +17,7 @@ The application is containerized using Docker.
 The application stores Apple Health export data in `/app/data`. **You must mount a persistent volume** to this path to prevent data loss during deployments.
 
 **Dokploy Configuration:**
+
 - **Volumes**:
   - Host Path: `/path/to/persistent/data` (e.g., `/project-manager/data`)
   - Container Path: `/app/data`
@@ -26,7 +27,7 @@ If this volume is not configured, all health data history will be lost on every 
 ## Apple Health Integration
 
 1. Use the [Health Auto Export](https://github.com/Lybron/health-auto-export) app (or similar) on iOS.
-2. Configure it to POST JSON data to `https://your-domain.com/api/health-data`.
+2. Configure it to POST JSON data to `https://pm.wesleysmits.com/api/health-data`.
 3. Valid exports will be saved to `data/health/` and visualized on the dashboard.
 
 ## Development

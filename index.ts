@@ -23,25 +23,30 @@ import authRoutes from './src/routes/auth';
 import healthDataRoutes from './src/routes/healthData';
 import analyticsRoutes from './src/routes/analytics';
 import { jwtAuthMiddleware } from './src/middleware/expressAuth';
-import * as crypto from 'crypto';
+import { apiKeyAuthMiddleware, requireAuth } from './src/middleware/apiKeyAuth';
 import cookieParser from 'cookie-parser';
 import { collectDailyMetrics } from './src/analytics/collector';
 import { getLatestSnapshot } from './src/analytics/store';
 import { Temporal } from '@js-temporal/polyfill';
 
-// Validate environment
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const NOTION_TOKEN = process.env.NOTION_TOKEN;
+// ─── Startup environment validation ──────────────────────────────────────────
 
-if (!TELEGRAM_TOKEN) {
-    console.error('❌ TELEGRAM_BOT_TOKEN not set in .env');
+const REQUIRED_ENV = [
+    'TELEGRAM_BOT_TOKEN',
+    'NOTION_TOKEN',
+    'NOTION_TASKS_DB',
+    'NOTION_PROJECTS_DB',
+    'NOTION_GOALS_DB',
+    'JWT_SECRET',
+] as const;
+
+const missingEnv = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missingEnv.length > 0) {
+    console.error(`❌ Missing required environment variables: ${missingEnv.join(', ')}`);
     process.exit(1);
 }
 
-if (!NOTION_TOKEN) {
-    console.error('❌ NOTION_TOKEN not set in .env');
-    process.exit(1);
-}
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
 
 console.log('🚀 Initializing Telegraf...');
 const bot = new Telegraf(TELEGRAM_TOKEN);
@@ -163,26 +168,32 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // ─── Express Server ──────────────────────────────────────────────────────────
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
+
 console.log('🚀 Initializing Express...');
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: ALLOWED_ORIGIN,
+    credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 console.log('✅ Express initialized');
 
-// Auth Routes (Public)
+// Auth Routes (Public — no JWT or API key required)
 app.use('/api/auth', authRoutes);
 
-// JWT Auth Protection (Protected Routes)
+// API key + JWT: either scheme authenticates the request
+app.use(apiKeyAuthMiddleware);
 app.use(jwtAuthMiddleware);
 
-// API routes
+// API routes (protected by the middleware stack above)
 app.use('/api', apiRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Morning briefing endpoint (legacy)
-app.post('/morning-brief', async (_req, res) => {
+// Morning briefing endpoint — requires API key or JWT
+app.post('/morning-brief', requireAuth, async (_req, res) => {
     try {
         await sendMorningBriefing(bot);
         res.json({ status: 'ok', message: 'Morning briefing sent', timestamp: new Date().toISOString() });
