@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-prod';
+// JWT_SECRET is guaranteed non-empty by startup validation in index.ts
+const JWT_SECRET = process.env.JWT_SECRET as string;
 const COOKIE_NAME = 'auth_token';
 const IS_PROD = process.env.NODE_ENV === 'production';
 
@@ -49,8 +50,8 @@ router.get('/me', (req, res) => {
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        res.json({ authenticated: true, user: decoded.user });
+        const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+        res.json({ authenticated: true, user: (decoded as JwtPayload & { user: string }).user });
     } catch (err) {
         res.clearCookie(COOKIE_NAME);
         res.status(401).json({ authenticated: false });

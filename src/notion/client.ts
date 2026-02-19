@@ -1,416 +1,379 @@
 /**
  * Shared Notion API client using raw HTTP for reliability
  */
-const NOTION_TOKEN: string | undefined = process.env.NOTION_TOKEN;
-const NOTION_TASKS_DB: string = process.env.NOTION_TASKS_DB || '28adeffc-b53c-80b1-bddd-e2b2673f11c3';
-const NOTION_PROJECTS_DB: string = process.env.NOTION_PROJECTS_DB || '28adeffc-b53c-80e4-b946-d0abd4a47213';
-const NOTION_GOALS_DB: string = process.env.NOTION_GOALS_DB || '28bdeffc-b53c-80b0-b0af-de14afe2bfbd';
+import { cached, invalidate } from './cache';
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Required environment variable ${name} is not set.`);
+    }
+    return value;
+}
+
+const NOTION_TOKEN: string = requireEnv('NOTION_TOKEN');
+const NOTION_TASKS_DB: string = requireEnv('NOTION_TASKS_DB');
+const NOTION_PROJECTS_DB: string = requireEnv('NOTION_PROJECTS_DB');
+const NOTION_GOALS_DB: string = requireEnv('NOTION_GOALS_DB');
 
 const HEADERS: Record<string, string> = {
-  'Authorization': `Bearer ${NOTION_TOKEN}`,
-  'Notion-Version': '2022-06-28',
-  'Content-Type': 'application/json'
+    'Authorization': `Bearer ${NOTION_TOKEN}`,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json',
 };
 
-// Basic Notion Types
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+/** A single Notion property value — the API returns varying shapes per type. */
+export interface NotionPropertyValue {
+    type: string;
+    id?: string;
+    title?: Array<{ plain_text: string }>;
+    rich_text?: Array<{ plain_text: string }>;
+    status?: { name: string };
+    select?: { name: string };
+    relation?: Array<{ id: string }>;
+    date?: { start: string; end: string | null };
+    checkbox?: boolean;
+    number?: number | null;
+    formula?: { type: string; string?: string; number?: number; boolean?: boolean };
+}
+
 export interface NotionPage {
-  id: string;
-  url: string;
-  properties: Record<string, any>;
-  [key: string]: any;
+    id: string;
+    url: string;
+    object?: string;
+    archived?: boolean;
+    created_time: string;
+    last_edited_time: string;
+    properties: Record<string, NotionPropertyValue>;
 }
 
 export interface NotionQueryResponse {
-  results: NotionPage[];
-  next_cursor: string | null;
-  has_more: boolean;
+    results: NotionPage[];
+    next_cursor: string | null;
+    has_more: boolean;
 }
 
-/**
- * Query a Notion database with pagination
- * @param {string} databaseId
- * @param {number} pageSize
- * @returns {Promise<NotionPage[]>}
- */
-export async function queryDatabase(databaseId: string, pageSize: number = 100): Promise<NotionPage[]> {
-  const results: NotionPage[] = [];
-  let nextCursor: string | null = null;
+/** Shape expected by queryDatabaseFiltered's `sorts` parameter. */
+export interface NotionSort {
+    property: string;
+    direction: 'ascending' | 'descending';
+}
 
-  do {
-    const body: any = { page_size: pageSize };
-    if (nextCursor) body.start_cursor = nextCursor;
+/** Notion filter object — intentionally loose since the filter DSL is large. */
+export type NotionFilter = Record<string, unknown>;
 
+// ─── Core HTTP helpers ────────────────────────────────────────────────────────
+
+async function notionFetch(url: string, options: RequestInit & { timeoutMs?: number }): Promise<Response> {
+    const { timeoutMs = 15000, ...fetchOptions } = options;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
-        method: 'POST',
-        headers: HEADERS,
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Notion query failed: ${res.status} ${text}`);
-      }
-
-      const json: NotionQueryResponse = await res.json() as NotionQueryResponse;
-      results.push(...json.results);
-      nextCursor = json.has_more ? json.next_cursor : null;
-    } catch (e) {
-      clearTimeout(timeout);
-      throw e;
+        const res = await fetch(url, { ...fetchOptions, signal: controller.signal });
+        return res;
+    } finally {
+        clearTimeout(timeout);
     }
-  } while (nextCursor);
+}
 
-  return results;
+async function paginatedQuery(databaseId: string, body: Record<string, unknown>): Promise<NotionPage[]> {
+    const results: NotionPage[] = [];
+    let nextCursor: string | null = null;
+
+    do {
+        const pageBody = { ...body, page_size: 100, ...(nextCursor ? { start_cursor: nextCursor } : {}) };
+        const res = await notionFetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+            method: 'POST',
+            headers: HEADERS,
+            body: JSON.stringify(pageBody),
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Notion query failed: ${res.status} ${text}`);
+        }
+
+        const json = await res.json() as NotionQueryResponse;
+        results.push(...json.results);
+        nextCursor = json.has_more ? json.next_cursor : null;
+    } while (nextCursor);
+
+    return results;
+}
+
+// ─── Public query functions ───────────────────────────────────────────────────
+
+/**
+ * Query a Notion database with full pagination.
+ */
+export async function queryDatabase(databaseId: string): Promise<NotionPage[]> {
+    return paginatedQuery(databaseId, {});
 }
 
 /**
- * Query a Notion database with specific filter and sorts
+ * Query a Notion database with optional filter and sorts.
  */
-export async function queryDatabaseFiltered(databaseId: string, filter?: any, sorts?: any[], pageSize: number = 100): Promise<NotionPage[]> {
-  const results: NotionPage[] = [];
-  let nextCursor: string | null = null;
-
-  do {
-    const body: any = { page_size: pageSize };
+export async function queryDatabaseFiltered(
+    databaseId: string,
+    filter?: NotionFilter,
+    sorts?: NotionSort[],
+    pageSize: number = 100,
+): Promise<NotionPage[]> {
+    const body: Record<string, unknown> = { page_size: pageSize };
     if (filter) body.filter = filter;
     if (sorts) body.sorts = sorts;
-    if (nextCursor) body.start_cursor = nextCursor;
+    return paginatedQuery(databaseId, body);
+}
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+/**
+ * Create a new page in a Notion database.
+ * Invalidates the relevant cache key automatically.
+ */
+export async function createPage(
+    databaseId: string,
+    properties: Record<string, NotionPropertyValue | { title: Array<{ text: { content: string } }> }>,
+): Promise<NotionPage> {
+    const res = await notionFetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: HEADERS,
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
+        body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
+        timeoutMs: 10000,
+    });
 
-      if (!res.ok) {
+    if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Notion query failed: ${res.status} ${text}`);
-      }
-
-      const json: NotionQueryResponse = await res.json() as NotionQueryResponse;
-      results.push(...json.results);
-      nextCursor = json.has_more ? json.next_cursor : null;
-    } catch (e) {
-      clearTimeout(timeout);
-      throw e;
+        throw new Error(`Create page failed: ${res.status} ${text}`);
     }
-  } while (nextCursor);
 
-  return results;
+    // Invalidate the cache for whichever DB was written to
+    invalidateDatabaseCache(databaseId);
+    return await res.json() as NotionPage;
 }
 
 /**
- * Create a new page in a database
+ * Update an existing Notion page's properties.
+ * Invalidates the relevant cache key automatically.
  */
-export async function createPage(databaseId: string, properties: Record<string, any>): Promise<NotionPage> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch('https://api.notion.com/v1/pages', {
-      method: 'POST',
-      headers: HEADERS,
-      body: JSON.stringify({
-        parent: { database_id: databaseId },
-        properties
-      }),
-      signal: controller.signal
+export async function updatePage(
+    pageId: string,
+    properties: Record<string, NotionPropertyValue | null>,
+): Promise<NotionPage> {
+    const res = await notionFetch(`https://api.notion.com/v1/pages/${pageId}`, {
+        method: 'PATCH',
+        headers: HEADERS,
+        body: JSON.stringify({ properties }),
+        timeoutMs: 10000,
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Create page failed: ${res.status} ${text}`);
+        const text = await res.text();
+        throw new Error(`Update page failed: ${res.status} ${text}`);
     }
 
+    // Invalidate all DB caches since we don't know which DB this page belongs to
+    invalidate();
     return await res.json() as NotionPage;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
 }
 
 /**
- * Update an existing page properties
- */
-export async function updatePage(pageId: string, properties: Record<string, any>): Promise<NotionPage> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
-      method: 'PATCH',
-      headers: HEADERS,
-      body: JSON.stringify({ properties }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Update page failed: ${res.status} ${text}`);
-    }
-
-    return await res.json() as NotionPage;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-/**
- * Fetch all tasks from the Tasks database
- */
-export async function fetchTasks(): Promise<NotionPage[]> {
-  return queryDatabase(NOTION_TASKS_DB);
-}
-
-/**
- * Fetch all projects from the Projects database
- */
-export async function fetchProjects(): Promise<NotionPage[]> {
-  return queryDatabase(NOTION_PROJECTS_DB);
-}
-
-/**
- * Fetch all goals from the Goals database
- */
-export async function fetchGoals(): Promise<NotionPage[]> {
-  return queryDatabase(NOTION_GOALS_DB);
-}
-
-/**
- * Extract title from a Notion page
- * Finds the property of type 'title', with fallbacks for text properties
- */
-export function getTitle(page: NotionPage): string {
-  const props = page.properties || {};
-  let primaryTitle: string | null = null;
-
-  // 1. Find the official primary 'title' property
-  for (const key of Object.keys(props)) {
-    if (props[key].type === 'title') {
-      const text = props[key].title?.[0]?.plain_text;
-      if (text && text.trim().length > 0) {
-        return text;
-      }
-      primaryTitle = text; // Store empty result just in case
-    }
-  }
-
-  // 2. Fallback: Look for specific named text properties (if primary was empty)
-  // User mentions "Goals -> Title" or "Projects -> Project name"
-  const candidates = ['Title', 'Name', 'Goal', 'Project', 'Task'];
-  for (const name of candidates) {
-    const prop = Object.values(props).find(p => p.id === name) || props[name] ||
-      props[Object.keys(props).find(k => k.toLowerCase() === name.toLowerCase()) || ''];
-
-    if (prop && prop.rich_text && prop.rich_text.length > 0) {
-      return prop.rich_text[0].plain_text;
-    }
-  }
-
-  return primaryTitle || 'Untitled';
-}
-
-/**
- * Extract description from a Notion page
- */
-export function getDescription(page: NotionPage): string | null {
-  const props = page.properties || {};
-  // Try common description property names
-  const descProp = props.Description?.rich_text || props.Notes?.rich_text || props.Summary?.rich_text;
-  return descProp?.[0]?.plain_text || null;
-}
-
-
-/**
- * Get IDs of related pages from a relation property
- */
-export function getRelationIds(page: NotionPage, propertyName: string): string[] {
-  const props = page.properties || {};
-  const prop = props[propertyName] ||
-    // Try to find any relation property if name not exact matching common patterns
-    Object.values(props).find(p => p.id === propertyName) || // if passed id
-    props[Object.keys(props).find(k => k.toLowerCase().includes(propertyName.toLowerCase())) || ''];
-
-  if (prop?.type === 'relation' && prop.relation) {
-    return prop.relation.map((r: any) => r.id);
-  }
-  return [];
-}
-
-/**
- * Check if a page has any relation properties set
- */
-export function hasRelation(page: NotionPage, propertyName: string | null = null): boolean {
-  const props = page.properties || {};
-
-  if (propertyName) {
-    const ids = getRelationIds(page, propertyName);
-    return ids.length > 0;
-  }
-
-  // Check any relation
-  for (const key of Object.keys(props)) {
-    const prop = props[key];
-    if (prop?.type === 'relation' && prop.relation?.length > 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Check if a task is completed or canceled
- */
-export function isCompleted(page: NotionPage): boolean {
-  const status = page.properties?.Status?.status?.name || '';
-  return /completed|canceled|cancelled|done/i.test(status);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Centralized Project Status Logic
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Project status categories for consistent filtering across all commands
- */
-export const PROJECT_STATUS = {
-  ACTIVE: ['in progress'],
-  READY: ['ready to start', 'ready for review'],
-  BACKLOG: ['backlog'],
-  PARKED: ['parked', 'on hold'],
-  DONE: ['done', 'completed', 'cancelled', 'canceled']
-};
-
-export type ProjectStatusCategory = 'ACTIVE' | 'READY' | 'BACKLOG' | 'PARKED' | 'DONE' | 'UNKNOWN';
-
-/**
- * Get the normalized status category for a project
- * @param {NotionPage} page - Notion page object
- * @returns {ProjectStatusCategory}
- */
-export function getProjectStatusCategory(page: NotionPage): ProjectStatusCategory {
-  const status = (page.properties?.Status?.status?.name ||
-    page.properties?.Status?.select?.name || '').trim().toLowerCase();
-
-  if (PROJECT_STATUS.ACTIVE.includes(status)) return 'ACTIVE';
-  if (PROJECT_STATUS.READY.includes(status)) return 'READY';
-  if (PROJECT_STATUS.BACKLOG.includes(status)) return 'BACKLOG';
-  if (PROJECT_STATUS.PARKED.includes(status)) return 'PARKED';
-  if (PROJECT_STATUS.DONE.includes(status)) return 'DONE';
-  return 'UNKNOWN';
-}
-
-/**
- * Check if a project is marked as "Evergreen" (general buckets that never close)
- * @param {NotionPage} page - Notion page object
- * @returns {boolean}
- */
-export function isEvergreen(page: NotionPage): boolean {
-  return page.properties?.Evergreen?.checkbox === true;
-}
-
-/**
- * Check if a project is blocked (via "Blocked?" checkbox)
- * @param {Object} page - Notion page object
- * @returns {boolean}
- */
-export function isBlocked(page: NotionPage): boolean {
-  return page.properties?.['Blocked?']?.checkbox === true;
-}
-
-/**
- * Check if a project is truly active (In Progress + not blocked + not evergreen)
- * Use this for accurate "active project" counts in /strategy and /improve
- * @param {Object} page - Notion page object
- * @returns {boolean}
- */
-export function isActiveProject(page: NotionPage): boolean {
-  return getProjectStatusCategory(page) === 'ACTIVE' && !isBlocked(page) && !isEvergreen(page);
-}
-
-/**
- * Get date from a date property
- */
-export function getDate(page: NotionPage, propertyName: string): string | null {
-  const dateProp = page.properties?.[propertyName]?.date;
-  return dateProp?.start || null;
-}
-
-
-/**
- * Search for pages in Notion
- * @param {string} query - Search query
- * @param {number} limit
+ * Search for pages across the Notion workspace.
  */
 export async function search(query: string, limit: number = 7): Promise<NotionPage[]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch('https://api.notion.com/v1/search', {
-      method: 'POST',
-      headers: HEADERS,
-      body: JSON.stringify({
-        query,
-        page_size: limit,
-        // Optional: filter for only pages if needed, but keeping it broad for now
-        filter: { property: 'object', value: 'page' }
-      }),
-      signal: controller.signal
+    const res = await notionFetch('https://api.notion.com/v1/search', {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify({
+            query,
+            page_size: limit,
+            filter: { property: 'object', value: 'page' },
+        }),
+        timeoutMs: 10000,
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Notion search failed: ${res.status} ${text}`);
+        const text = await res.text();
+        throw new Error(`Notion search failed: ${res.status} ${text}`);
     }
 
     const json = await res.json() as NotionQueryResponse;
     return json.results;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
 }
 
 /**
- * Get a single page by ID
+ * Get a single Notion page by ID.
  */
 export async function getPage(pageId: string): Promise<NotionPage> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
-      method: 'GET',
-      headers: HEADERS,
-      signal: controller.signal
+    const res = await notionFetch(`https://api.notion.com/v1/pages/${pageId}`, {
+        method: 'GET',
+        headers: HEADERS,
+        timeoutMs: 10000,
     });
-    clearTimeout(timeout);
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Get page failed: ${res.status} ${text}`);
+        const text = await res.text();
+        throw new Error(`Get page failed: ${res.status} ${text}`);
     }
 
     return await res.json() as NotionPage;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
+}
+
+// ─── Cached domain fetchers ───────────────────────────────────────────────────
+
+const CACHE_KEYS = {
+    tasks: 'notion:tasks',
+    projects: 'notion:projects',
+    goals: 'notion:goals',
+} as const;
+
+function invalidateDatabaseCache(databaseId: string): void {
+    if (databaseId === NOTION_TASKS_DB) invalidate(CACHE_KEYS.tasks);
+    else if (databaseId === NOTION_PROJECTS_DB) invalidate(CACHE_KEYS.projects);
+    else if (databaseId === NOTION_GOALS_DB) invalidate(CACHE_KEYS.goals);
+}
+
+/** Fetch all tasks (cached for 5 minutes). */
+export function fetchTasks(): Promise<NotionPage[]> {
+    return cached(CACHE_KEYS.tasks, () => queryDatabase(NOTION_TASKS_DB));
+}
+
+/** Fetch all projects (cached for 5 minutes). */
+export function fetchProjects(): Promise<NotionPage[]> {
+    return cached(CACHE_KEYS.projects, () => queryDatabase(NOTION_PROJECTS_DB));
+}
+
+/** Fetch all goals (cached for 5 minutes). */
+export function fetchGoals(): Promise<NotionPage[]> {
+    return cached(CACHE_KEYS.goals, () => queryDatabase(NOTION_GOALS_DB));
+}
+
+// ─── Property helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Extract plain text from a Notion title property.
+ * Tries the official `title`-typed property first, then falls back to known
+ * rich_text property names.
+ */
+export function getTitle(page: NotionPage): string {
+    const props = page.properties ?? {};
+
+    // 1. Official title-type property
+    for (const prop of Object.values(props)) {
+        if (prop.type === 'title' && prop.title && prop.title.length > 0) {
+            const text = prop.title[0].plain_text;
+            if (text.trim().length > 0) return text;
+        }
+    }
+
+    // 2. Fallback: common rich_text property names
+    const candidates = ['Title', 'Name', 'Goal', 'Project', 'Task'];
+    for (const name of candidates) {
+        const prop = props[name] ?? props[Object.keys(props).find(k => k.toLowerCase() === name.toLowerCase()) ?? ''];
+        if (prop?.rich_text && prop.rich_text.length > 0) {
+            return prop.rich_text[0].plain_text;
+        }
+    }
+
+    return 'Untitled';
+}
+
+/**
+ * Extract plain text from a Description/Notes/Summary rich_text property.
+ */
+export function getDescription(page: NotionPage): string | null {
+    const props = page.properties ?? {};
+    const descProp = props['Description']?.rich_text ?? props['Notes']?.rich_text ?? props['Summary']?.rich_text;
+    return descProp?.[0]?.plain_text ?? null;
+}
+
+/**
+ * Get IDs of related pages from a named relation property.
+ */
+export function getRelationIds(page: NotionPage, propertyName: string): string[] {
+    const props = page.properties ?? {};
+    const prop =
+        props[propertyName] ??
+        props[Object.keys(props).find(k => k.toLowerCase().includes(propertyName.toLowerCase())) ?? ''];
+
+    if (prop?.type === 'relation' && prop.relation) {
+        return prop.relation.map(r => r.id);
+    }
+    return [];
+}
+
+/**
+ * Check whether a page has at least one relation property set.
+ * Pass `propertyName` to check a specific relation.
+ */
+export function hasRelation(page: NotionPage, propertyName: string | null = null): boolean {
+    const props = page.properties ?? {};
+
+    if (propertyName) {
+        return getRelationIds(page, propertyName).length > 0;
+    }
+
+    return Object.values(props).some(prop => prop?.type === 'relation' && (prop.relation?.length ?? 0) > 0);
+}
+
+/**
+ * Return `true` if the page status matches any done/completed/cancelled value.
+ */
+export function isCompleted(page: NotionPage): boolean {
+    const status = page.properties?.['Status']?.status?.name ?? '';
+    return /completed|canceled|cancelled|done/i.test(status);
+}
+
+/**
+ * Extract the start date string from a Notion date property.
+ */
+export function getDate(page: NotionPage, propertyName: string): string | null {
+    return page.properties?.[propertyName]?.date?.start ?? null;
+}
+
+// ─── Project status helpers ───────────────────────────────────────────────────
+
+export const PROJECT_STATUS = {
+    ACTIVE: ['in progress'],
+    READY: ['ready to start', 'ready for review'],
+    BACKLOG: ['backlog'],
+    PARKED: ['parked', 'on hold'],
+    DONE: ['done', 'completed', 'cancelled', 'canceled'],
+} as const;
+
+export type ProjectStatusCategory = 'ACTIVE' | 'READY' | 'BACKLOG' | 'PARKED' | 'DONE' | 'UNKNOWN';
+
+export function getProjectStatusCategory(page: NotionPage): ProjectStatusCategory {
+    const status = (
+        page.properties?.['Status']?.status?.name ??
+        page.properties?.['Status']?.select?.name ??
+        ''
+    ).trim().toLowerCase();
+
+    if ((PROJECT_STATUS.ACTIVE as readonly string[]).includes(status)) return 'ACTIVE';
+    if ((PROJECT_STATUS.READY as readonly string[]).includes(status)) return 'READY';
+    if ((PROJECT_STATUS.BACKLOG as readonly string[]).includes(status)) return 'BACKLOG';
+    if ((PROJECT_STATUS.PARKED as readonly string[]).includes(status)) return 'PARKED';
+    if ((PROJECT_STATUS.DONE as readonly string[]).includes(status)) return 'DONE';
+    return 'UNKNOWN';
+}
+
+/** True if the project's "Evergreen" checkbox is checked. */
+export function isEvergreen(page: NotionPage): boolean {
+    return page.properties?.['Evergreen']?.checkbox === true;
+}
+
+/** True if the project's "Blocked?" checkbox is checked. */
+export function isBlocked(page: NotionPage): boolean {
+    return page.properties?.['Blocked?']?.checkbox === true;
+}
+
+/**
+ * True if a project is truly active: In Progress + not blocked + not evergreen.
+ * Use this everywhere instead of hardcoding status checks.
+ */
+export function isActiveProject(page: NotionPage): boolean {
+    return getProjectStatusCategory(page) === 'ACTIVE' && !isBlocked(page) && !isEvergreen(page);
 }

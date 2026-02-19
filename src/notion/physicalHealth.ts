@@ -1,7 +1,7 @@
 
-import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage } from './client';
+import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage, NotionFilter, NotionSort, NotionPropertyValue } from './client';
 
-let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || 'd7b72947-241c-4cf2-9ef9-7bb79049482b';
+let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || null;
 
 /**
  * Find the Health Metrics database ID if not already known
@@ -217,8 +217,8 @@ async function upsertDailyEntry(dbId: string, stats: DailyStats) {
 
     const existingPage = query[0];
 
-    // Construct properties
-    const props: Record<string, any> = {
+    // Construct properties — shape matches Notion write API
+    const props: Record<string, NotionPropertyValue | { title: Array<{ text: { content: string } }> }> = {
         'Date': { date: { start: stats.date } },
         'Steps': { number: Math.round(stats.steps) },
         'Active Energy': { number: Math.round(stats.activeEnergy) },
@@ -264,12 +264,12 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
     const dbId = await getHealthDatabaseId();
 
     // Build filter
-    const filters: any[] = [];
-    if (from) filters.push({ property: 'Date', date: { on_or_after: from } });
-    if (to) filters.push({ property: 'Date', date: { on_or_before: to } });
+    const filterClauses: NotionFilter[] = [];
+    if (from) filterClauses.push({ property: 'Date', date: { on_or_after: from } });
+    if (to) filterClauses.push({ property: 'Date', date: { on_or_before: to } });
 
-    const filter = filters.length > 0 ? { and: filters } : undefined;
-    const sorts = [{ property: 'Date', direction: 'ascending' }];
+    const filter: NotionFilter | undefined = filterClauses.length > 0 ? { and: filterClauses } : undefined;
+    const sorts: NotionSort[] = [{ property: 'Date', direction: 'ascending' }];
 
     // Query pages
     const pages = await queryDatabaseFiltered(dbId, filter, sorts, 100);

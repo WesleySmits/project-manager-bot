@@ -2,6 +2,8 @@
  * Gemini AI Client for Strategic Advice
  */
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { StrategyAnalysis } from '../pm/strategy';
+import { NotionPage, getTitle } from '../notion/client';
 
 // Get API Key from env
 const API_KEY: string | undefined = process.env.GEMINI_API_KEY;
@@ -11,40 +13,23 @@ let model: GenerativeModel | null = null;
 
 if (API_KEY) {
     genAI = new GoogleGenerativeAI(API_KEY);
-    // Fallback to Flash if Pro is unavailable, or use 'gemini-pro' (v1.0)
-    // User asked for "Pro 3" (likely meaning the latest Pro or Flash)
     model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 } else {
     console.warn('⚠️ GEMINI_API_KEY is missing. AI features will be disabled.');
 }
 
-interface StrategyAnalysis {
-    metrics: {
-        activeProjectsCount: number;
-    };
-    issues: {
-        stalledGoals: any[]; // Define more specific Notion types if possible
-        zombieProjects: any[];
-    };
-    progress: {
-        title: string;
-        percent: number;
-    }[];
-}
-
-interface Task {
+interface TaskForInsight {
     title: string;
     priority?: string;
-    properties?: any; // Define Notion property types
+    projectRelationId?: string;
 }
 
-interface Goal {
-    properties?: any; // Define Notion property types
+interface GoalForInsight {
+    title: string;
 }
 
 /**
- * Generate improvement advice based on strategy analysis
- * @param {StrategyAnalysis} analysis - The JSON output from strategy.js
+ * Generate improvement advice based on strategy analysis.
  */
 export async function getStrategicAdvice(analysis: StrategyAnalysis): Promise<string> {
     if (!model) {
@@ -53,15 +38,14 @@ export async function getStrategicAdvice(analysis: StrategyAnalysis): Promise<st
 
     const { metrics, issues, progress } = analysis;
 
-    // Prepare context for the LLM
     const context = {
         role: "You are an elite, no-nonsense Project Manager auditing a user's life operating system.",
         data: {
             active_projects: metrics.activeProjectsCount,
             project_limit: 5,
-            stalled_goals: issues.stalledGoals.map((g: any) => g.properties?.Name?.title?.[0]?.plain_text || 'Untitled'),
-            zombie_projects: issues.zombieProjects.map((p: any) => p.properties?.['Project name']?.title?.[0]?.plain_text || 'Untitled'),
-            goal_progress: progress.map(p => ({ goal: p.title, percent: p.percent }))
+            stalled_goals: issues.stalledGoals.map((g: NotionPage) => getTitle(g)),
+            zombie_projects: issues.zombieProjects.map((p: NotionPage) => getTitle(p)),
+            goal_progress: progress.map(p => ({ goal: p.title, percent: p.percent })),
         },
         instructions: `
       Analyze the data above.
@@ -71,7 +55,7 @@ export async function getStrategicAdvice(analysis: StrategyAnalysis): Promise<st
       4. Keep the output concise, conversational, and direct.
       5. Do not use markdown headers significantly, use bolding for emphasis.
       6. End with a concrete proposal: "Shall we create a project for [Goal]?"
-    `
+    `,
     };
 
     try {
@@ -85,25 +69,20 @@ export async function getStrategicAdvice(analysis: StrategyAnalysis): Promise<st
 }
 
 /**
- * Generate insights on how today's tasks contribute to life goals
- * @param {Task[]} tasks - List of today's tasks
- * @param {Goal[]} goals - List of active goals
- * @returns {Promise<string>} AI-generated insight text
+ * Generate insights on how today's tasks contribute to life goals.
  */
-export async function getTaskInsights(tasks: Task[], goals: Goal[]): Promise<string> {
-    if (!model) return "⚠️ AI insights unavailable (Key missing)";
+export async function getTaskInsights(tasks: TaskForInsight[], goals: GoalForInsight[]): Promise<string> {
+    if (!model) return '⚠️ AI insights unavailable (Key missing)';
 
     const context = {
-        role: "You are a wise and motivating productivity coach.",
+        role: 'You are a wise and motivating productivity coach.',
         data: {
             tasks: tasks.map(t => ({
                 title: t.title,
                 priority: t.priority,
-                project: t.properties?.Project?.relation?.[0]?.id // We might not have project name resolved here easily without extra fetching, but let's try to rely on Title/Context
+                projectRelationId: t.projectRelationId,
             })),
-            goals: goals.map(g => ({
-                title: g.properties?.Name?.title?.[0]?.plain_text || 'Untitled'
-            }))
+            goals: goals.map(g => ({ title: g.title })),
         },
         instructions: `
         Analyze how these specific tasks contribute to the user's life goals.
@@ -112,7 +91,7 @@ export async function getTaskInsights(tasks: Task[], goals: Goal[]): Promise<str
         3. Provide a coherent, 2-3 sentence paragraph explaining WHY these tasks are the right thing to focus on today.
         4. Be encouraging but grounded.
         5. Start directly with the insight, no "Here is the insight:" preamble.
-        `
+        `,
     };
 
     try {
@@ -121,22 +100,22 @@ export async function getTaskInsights(tasks: Task[], goals: Goal[]): Promise<str
         return response.text();
     } catch (err) {
         console.error('Gemini Insight Error:', err);
-        return "Could not generate insights at this time.";
+        return 'Could not generate insights at this time.';
     }
 }
 
 /**
- * Generate a motivational message about today's work impact
+ * Generate a motivational message about today's work impact.
  */
 export async function generateMotivation(
     todayTasks: Array<{ title: string; id: string }>,
     goals: Array<{ title: string; progress: number }>,
-    activeProjects: string[]
+    activeProjects: string[],
 ): Promise<string> {
-    if (!model) return "⚠️ Motivation unavailable (Key missing)";
+    if (!model) return '⚠️ Motivation unavailable (Key missing)';
 
     const context = {
-        role: "You are a concise, energizing productivity coach. You speak directly and with conviction.",
+        role: 'You are a concise, energizing productivity coach. You speak directly and with conviction.',
         data: {
             todayTasks: todayTasks.map(t => t.title),
             goals: goals.map(g => ({ goal: g.title, progress: `${g.progress}%` })),
@@ -149,7 +128,7 @@ export async function generateMotivation(
         3. End with one powerful motivating sentence.
         4. Be specific — reference actual task names and goal names.
         5. Keep it under 100 words total. No markdown headers, just flowing text with bold for emphasis.
-        `
+        `,
     };
 
     try {
@@ -158,7 +137,6 @@ export async function generateMotivation(
         return response.text();
     } catch (err) {
         console.error('Gemini Motivation Error:', err);
-        return "Could not generate motivation at this time.";
+        return 'Could not generate motivation at this time.';
     }
 }
-

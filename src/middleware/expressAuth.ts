@@ -1,51 +1,47 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-prod';
+// JWT_SECRET is guaranteed non-empty by startup validation in index.ts
+const JWT_SECRET = process.env.JWT_SECRET as string;
 const COOKIE_NAME = 'auth_token';
+
+interface AuthenticatedRequest extends Request {
+    user?: JwtPayload | string;
+}
 
 /**
  * JWT Authentication Middleware
- * Protects routes by verifying the HTTP-only cookie
+ * Protects routes by verifying the HTTP-only cookie.
+ * Runs after apiKeyAuthMiddleware — if the API key already authenticated
+ * the request, this middleware is effectively a no-op for that request.
  */
-export const jwtAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
-    // Skip auth for login/public routes (handled in index.ts via route ordering usually, but good safeguard)
+export const jwtAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    // Skip auth for public routes
     if (req.path.startsWith('/api/auth') || req.path === '/api/health') {
         next();
         return;
     }
 
-    // Skip auth in development IF strictly requested, but session auth is usually better to keep consistent
-    if (process.env.NODE_ENV === 'development') {
-        // Option: allow dev to skip? For now, let's enforce it to test the flow.
-        // next(); return;
-    }
-
     const token = req.cookies?.[COOKIE_NAME];
 
     if (!token) {
-        // If API request, return 401
         if (req.path.startsWith('/api')) {
             res.status(401).json({ error: 'Unauthorized' });
             return;
         }
-        // If Frontend request (document), redirect to Login
-        // Note: In an SPA, we might typically serve the index.html and let React handle the redirect.
-        // But for strict protection, we can redirect here OR let the SPA handle 401s.
-        // Let's pass through for non-API requests (static files/SPA) so the frontend can load and handle the redirect.
+        // Non-API request (SPA static files) — let React handle the redirect
         next();
         return;
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        (req as any).user = decoded;
+        req.user = jwt.verify(token, JWT_SECRET);
         next();
-    } catch (err) {
+    } catch {
         if (req.path.startsWith('/api')) {
             res.status(401).json({ error: 'Invalid token' });
         } else {
-            next(); // Let frontend handle invalid session
+            next();
         }
     }
 };

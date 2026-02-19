@@ -54,13 +54,12 @@ export const loggerMiddleware = async (ctx: Context, next: () => Promise<void>):
     const username = ctx.from?.username || 'unknown';
     let action = '';
 
-    // Telegraf types might need specific casting or checks for message content
-    const message = ctx.message as any;
+    const message = ctx.message;
 
-    if (message?.text) {
+    if (message && 'text' in message && message.text) {
         action = `COMMAND: ${message.text}`;
     } else if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
-        action = `CALLBACK: ${(ctx.callbackQuery as any).data}`;
+        action = `CALLBACK: ${ctx.callbackQuery.data}`;
     } else {
         action = `EVENT: ${ctx.updateType}`;
     }
