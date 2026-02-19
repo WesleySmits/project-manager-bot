@@ -17,10 +17,10 @@ import { logToDisk } from '../pm/middleware';
  * Format a single task detail view
  */
 function formatTaskDetail(page: NotionPage): string {
-    const icon = page.icon?.emoji || '📄';
+    const icon = page.icon?.type === 'emoji' ? page.icon.emoji : '📄';
     const title = getTitle(page);
-    const status = page.properties?.Status?.status?.name || 'No Status';
-    const priority = page.properties?.Priority?.select?.name || 'No Priority';
+    const status = page.properties?.['Status']?.status?.name || 'No Status';
+    const priority = page.properties?.['Priority']?.select?.name || 'No Priority';
     const due = getDate(page, 'Due Date') || getDate(page, 'Due');
     const scheduled = getDate(page, 'Scheduled');
     const desc = getDescription(page) || 'No description';
@@ -69,7 +69,7 @@ async function handleTaskSearch(ctx: Context, query: string): Promise<any> {
         // Send each result with an "Open" button
         for (const page of results.slice(0, 5)) {
             const title = getTitle(page);
-            const icon = page.icon?.emoji || '📄';
+            const icon = page.icon?.type === 'emoji' ? page.icon.emoji : '📄';
 
             await ctx.reply(`${icon} ${title}`, {
                 reply_markup: {

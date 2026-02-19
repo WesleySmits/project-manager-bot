@@ -58,7 +58,10 @@ export async function generateMorningBriefing(): Promise<string> {
 
         // 4. AI INSIGHTS
         // Cast tasks and goals to match the interfaces expected by Gemini (simple mapping if needed)
-        const insights = await getTaskInsights(tasks, goals);
+        const insights = await getTaskInsights(
+            tasks.map(t => ({ title: t.title, priority: t.priority })),
+            goals.map(g => ({ title: g.properties?.['Name']?.title?.[0]?.plain_text || 'Untitled' }))
+        );
         lines.push('🧠 *Insight:*');
         lines.push(`_${insights}_`);
     }

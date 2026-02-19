@@ -218,30 +218,46 @@ async function upsertDailyEntry(dbId: string, stats: DailyStats) {
     const existingPage = query[0];
 
     // Construct properties — shape matches Notion write API
-    const props: Record<string, NotionPropertyValue | { title: Array<{ text: { content: string } }> }> = {
-        'Date': { date: { start: stats.date } },
-        'Steps': { number: Math.round(stats.steps) },
-        'Active Energy': { number: Math.round(stats.activeEnergy) },
-        'Resting Energy': { number: Math.round(stats.restingEnergy) },
-        'Stand Hours': { number: Number(stats.standHours.toFixed(1)) },
-        'Exercise Time': { number: Math.round(stats.exerciseTime) },
-        'Flights Climbed': { number: stats.flights },
-        'Weight': { number: stats.weightCount > 0 ? Number(stats.weight.toFixed(1)) : null },
-        'Body Fat': { number: stats.bodyFatCount > 0 ? Number(stats.bodyFat.toFixed(1)) : null },
-        'BMI': { number: stats.bmiCount > 0 ? Number(stats.bmi.toFixed(1)) : null },
+    const props: Record<string, NotionPropertyValue> = {
+        'Date': { type: 'date', date: { start: stats.date, end: null } },
+        'Steps': { type: 'number', number: Math.round(stats.steps) },
+        'Active Energy': { type: 'number', number: Math.round(stats.activeEnergy) },
+        'Resting Energy': { type: 'number', number: Math.round(stats.restingEnergy) },
+        'Stand Hours': { type: 'number', number: Number(stats.standHours.toFixed(1)) },
+        'Exercise Time': { type: 'number', number: Math.round(stats.exerciseTime) },
+        'Flights Climbed': { type: 'number', number: stats.flights },
+        'Weight': { type: 'number', number: stats.weightCount > 0 ? Number(stats.weight.toFixed(1)) : null },
+        'Body Fat': { type: 'number', number: stats.bodyFatCount > 0 ? Number(stats.bodyFat.toFixed(1)) : null },
+        'BMI': { type: 'number', number: stats.bmiCount > 0 ? Number(stats.bmi.toFixed(1)) : null },
 
         // Sleep breakdown
-        'Sleep Total': { number: Number(stats.sleepTotal.toFixed(2)) },
-        'Sleep Deep': { number: Number(stats.sleepDeep.toFixed(2)) },
-        'Sleep Core': { number: Number(stats.sleepCore.toFixed(2)) },
-        'Sleep REM': { number: Number(stats.sleepRem.toFixed(2)) },
-        'Sleep Awake': { number: Number(stats.sleepAwake.toFixed(2)) },
+        'Sleep Total': { type: 'number', number: Number(stats.sleepTotal.toFixed(2)) },
+        'Sleep Deep': { type: 'number', number: Number(stats.sleepDeep.toFixed(2)) },
+        'Sleep Core': { type: 'number', number: Number(stats.sleepCore.toFixed(2)) },
+        'Sleep REM': { type: 'number', number: Number(stats.sleepRem.toFixed(2)) },
+        'Sleep Awake': { type: 'number', number: Number(stats.sleepAwake.toFixed(2)) },
     };
 
     if (existingPage) {
         await updatePage(existingPage.id, props);
     } else {
-        props['Log'] = { title: [{ text: { content: stats.date } }] };
+        props['Log'] = { type: 'title', title: [{ type: 'text', plain_text: stats.date, text: { content: stats.date }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] } as any;
+        // Note: 'title' structure in NotionPropertyValue is tricky, overriding 'any' to satisfy strict Record check or fixing NotionPropertyValue definition
+        // NotionPropertyValue definition for title: title?: Array<{ plain_text: string }>;
+        // But for creation we need the full text object structure.
+        // Let's rely on 'any' cast for this one specific complex property or adjust the interface.
+        // Actually, let's fix the property construction to match expected input.
+        // The API expects: { title: [ { text: { content: "..." } } ] }
+        // client.ts updatePage/createPage expects Record<string, NotionPropertyValue>
+        // and NotionPropertyValue has title?: Array<{ plain_text: string }>; which is for OUTPUT.
+        // Input structure is slightly different.
+
+        // Let's use 'as any' for now to bypass strict check on the Log title which is an edge case.
+        props['Log'] = {
+            type: 'title',
+            title: [{ text: { content: stats.date } }]
+        } as any;
+
         await createPage(dbId, props);
     }
 }
