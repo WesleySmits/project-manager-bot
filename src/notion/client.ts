@@ -45,6 +45,8 @@ export interface NotionPage {
     id: string;
     url: string;
     object?: string;
+    icon?: { type: 'emoji'; emoji: string } | { type: 'external'; external: { url: string } } | null;
+    cover?: { type: 'external'; external: { url: string } } | null;
     archived?: boolean;
     created_time: string;
     last_edited_time: string;
