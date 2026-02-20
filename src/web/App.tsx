@@ -12,6 +12,7 @@ import HealthData from './pages/HealthData';
 import HealthDashboard from './pages/HealthDashboard';
 import Login from './pages/Login';
 import Analytics from './pages/Analytics';
+import WeeklyReview from './pages/WeeklyReview';
 import { AuthProvider, RequireAuth } from './context/AuthContext';
 import { prefetchAll } from './client';
 
@@ -49,6 +50,7 @@ export default function App() {
                     <Route path="/health" element={<Health />} />
                     <Route path="/insights" element={<Insights />} />
                     <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/weekly-review" element={<WeeklyReview />} />
                     <Route path="/body" element={<HealthDashboard />} />
                     <Route path="/health-data" element={<HealthData />} />
                 </Route>

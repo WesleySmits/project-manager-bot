@@ -12,6 +12,7 @@ const analysisItems = [
     { to: '/health', label: 'Health', icon: '♡' },
     { to: '/insights', label: 'Insights', icon: '✦' },
     { to: '/analytics', label: 'Analytics', icon: '📈' },
+    { to: '/weekly-review', label: 'Weekly Review', icon: '📋' },
 ];
 
 const personalItems = [

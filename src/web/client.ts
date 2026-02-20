@@ -196,6 +196,41 @@ export interface MetricsResponse {
     dateRange: { from: string; to: string };
 }
 
+export interface WeeklyReviewTask {
+    id: string;
+    title: string;
+    completedDate: string;
+    priority: string | null;
+    url: string;
+}
+
+export interface WeeklyReviewProject {
+    id: string;
+    title: string;
+    completedDate: string;
+    url: string;
+}
+
+export interface WeeklyReviewGoal {
+    id: string;
+    title: string;
+    completedDate: string;
+    url: string;
+}
+
+export interface WeeklyReviewData {
+    weekStart: string;
+    weekEnd: string;
+    tasks: WeeklyReviewTask[];
+    projects: WeeklyReviewProject[];
+    goals: WeeklyReviewGoal[];
+    totals: {
+        tasks: number;
+        projects: number;
+        goals: number;
+    };
+}
+
 export interface AnalyticsSnapshot {
     date: string;
     timestamp: string;
@@ -239,6 +274,10 @@ export const api = {
         summary: () => get<AnalyticsSnapshot>('/analytics/summary'),
         history: () => get<AnalyticsSnapshot[]>('/analytics/history'),
         refresh: () => post<AnalyticsSnapshot>('/analytics/refresh'),
+    },
+    weeklyReview: (week?: string) => {
+        const path = week ? `/weekly-review?week=${encodeURIComponent(week)}` : '/weekly-review';
+        return get<WeeklyReviewData>(path, true); // always skip cache — week data changes during the week
     },
 };
 
