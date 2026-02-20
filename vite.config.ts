@@ -5,6 +5,11 @@ import path from 'path';
 export default defineConfig({
     plugins: [react()],
     root: './src/web',
+    test: {
+        root: path.resolve(__dirname),
+        include: ['src/**/*.{test,spec}.{ts,tsx}'],
+        environment: 'node',
+    },
     build: {
         outDir: '../../dist/web',
         emptyOutDir: true,

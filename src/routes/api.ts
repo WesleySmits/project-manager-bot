@@ -3,6 +3,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage } from '../notion/client';
+import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
 import { getTodayTasks } from '../commands/todayTasks';
@@ -426,6 +427,32 @@ router.get('/projects/summary', async (_req: Request, res: Response) => {
     } catch (err) {
         console.error('Project summary API error:', err);
         res.status(500).json({ error: 'Failed to generate project summary' });
+    }
+});
+
+/**
+ * Weekly Review — completed tasks, projects, and goals for a given ISO week.
+ *
+ * Query params:
+ *   ?week=YYYY-MM-DD  (optional) Monday of the desired week. Defaults to current week.
+ *
+ * Examples:
+ *   GET /api/weekly-review
+ *   GET /api/weekly-review?week=2026-02-16
+ *
+ * Errors:
+ *   400  if `week` is not a valid date or not a Monday
+ *   500  on unexpected failures
+ */
+router.get('/weekly-review', async (req: Request, res: Response) => {
+    try {
+        const weekParam = typeof req.query.week === 'string' ? req.query.week : undefined;
+        const result = await getWeeklyReview(weekParam);
+        res.json(result);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        const isClientError = message.includes('not a Monday') || message.includes('Invalid date');
+        res.status(isClientError ? 400 : 500).json({ error: message });
     }
 });
 

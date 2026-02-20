@@ -9,7 +9,9 @@
     "build:web": "npx vite build",
     "dev:web": "npx vite",
     "health": "node -e \"require('dotenv').config(); const {runHealthCheck,formatHealthReport}=require('./src/notion/health'); runHealthCheck().then(r=>console.log(formatHealthReport(r)))\"",
-    "tasks": "node -e \"require('dotenv').config(); const {getTodayTasks,formatTodayTasks}=require('./src/commands/todayTasks'); getTodayTasks(5).then(t=>console.log(formatTodayTasks(t)))\""
+    "tasks": "node -e \"require('dotenv').config(); const {getTodayTasks,formatTodayTasks}=require('./src/commands/todayTasks'); getTodayTasks(5).then(t=>console.log(formatTodayTasks(t)))\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@google/generative-ai": "^0.3.1",
@@ -38,6 +40,7 @@
     "react-router-dom": "^7.13.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }
