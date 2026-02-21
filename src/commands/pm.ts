@@ -8,7 +8,7 @@ import { Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
 import {
     search, getPage, getTitle, getDescription, getDate, hasRelation,
-    NotionPage
+    NotionPage, getTaskByShortId
 } from '../notion/client';
 import { createRequest, updateRequestStatus, getRequest } from '../pm/approvals';
 import { logToDisk } from '../pm/middleware';
@@ -89,10 +89,16 @@ async function handleTaskSearch(ctx: Context, query: string): Promise<any> {
 /**
  * Handle /task <id> or detail view
  */
-async function handleTaskDetail(ctx: Context, id: string): Promise<void> {
+async function handleTaskDetail(ctx: Context, id: string | number): Promise<void> {
     try {
         await ctx.replyWithChatAction('typing');
-        const page = await getPage(id);
+        const page = typeof id === 'number' ? await getTaskByShortId(id) : await getPage(id);
+
+        if (!page) {
+            await ctx.reply(`❌ Task not found for ID: ${id}`);
+            return;
+        }
+
         const text = formatTaskDetail(page);
 
         // Add actions (Phase 2 approval actions)
@@ -101,8 +107,8 @@ async function handleTaskDetail(ctx: Context, id: string): Promise<void> {
             reply_markup: {
                 inline_keyboard: [
                     [
-                        { text: '✅ Complete', callback_data: `pm:req:complete:${id}` },
-                        { text: '📅 Remind', callback_data: `pm:req:remind:${id}` }
+                        { text: '✅ Complete', callback_data: `pm:req:complete:${page.id}` },
+                        { text: '📅 Remind', callback_data: `pm:req:remind:${page.id}` }
                     ]
                 ]
             }
@@ -119,20 +125,24 @@ async function handleTaskDetail(ctx: Context, id: string): Promise<void> {
  */
 export async function handleTaskCommand(ctx: Context): Promise<any> {
     const text = (ctx.message as any)?.text || '';
-    const input = text.split(' ').slice(1).join(' ');
+    const input = text.split(' ').slice(1).join(' ').trim();
 
     if (!input) {
         return ctx.reply('Usage: /task <search query> OR /task <id>');
     }
 
     if (input.startsWith('search ')) {
-        return handleTaskSearch(ctx, input.replace('search ', ''));
+        return handleTaskSearch(ctx, input.replace('search ', '').trim());
     }
 
     // If input looks like UUID, treat as ID, otherwise search
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}/.test(input);
+    const isNumericId = /^\d+$/.test(input);
+
     if (isUUID) {
         return handleTaskDetail(ctx, input);
+    } else if (isNumericId) {
+        return handleTaskDetail(ctx, parseInt(input, 10));
     } else {
         return handleTaskSearch(ctx, input);
     }

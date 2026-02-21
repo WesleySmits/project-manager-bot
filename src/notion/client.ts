@@ -379,3 +379,29 @@ export function isBlocked(page: NotionPage): boolean {
 export function isActiveProject(page: NotionPage): boolean {
     return getProjectStatusCategory(page) === 'ACTIVE' && !isBlocked(page) && !isEvergreen(page);
 }
+
+// ─── Task specific helpers ───────────────────────────────────────────────────
+
+/**
+ * Retrieve a Task by its short numeric 'Task ID'.
+ */
+export async function getTaskByShortId(taskId: number): Promise<NotionPage | null> {
+    const pages = await queryDatabaseFiltered(NOTION_TASKS_DB, {
+        property: 'Task ID',
+        unique_id: { equals: taskId }
+    }, undefined, 1);
+
+    return pages.length > 0 ? pages[0] : null;
+}
+
+/**
+ * Update the Status property of a Notion task page.
+ */
+export async function updateTaskStatus(pageId: string, statusName: string): Promise<NotionPage> {
+    return updatePage(pageId, {
+        'Status': {
+            type: 'status',
+            status: { name: statusName }
+        }
+    });
+}

@@ -2,7 +2,7 @@
  * REST API Routes for Web Interface
  */
 import { Router, Request, Response } from 'express';
-import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage } from '../notion/client';
+import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage, getTaskByShortId, updateTaskStatus } from '../notion/client';
 import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
@@ -52,6 +52,49 @@ function serializeGoal(g: NotionPage) {
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+
+/** Get task by short numeric ID */
+router.get('/tasks/short/:id', async (req: Request, res: Response) => {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) {
+            return res.status(400).json({ error: 'Invalid short ID' });
+        }
+        const task = await getTaskByShortId(id);
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+        res.json(serializeTask(task));
+    } catch (err) {
+        console.error('Task by short ID API error:', err);
+        res.status(500).json({ error: 'Failed to fetch task' });
+    }
+});
+
+/** Update task status by short ID */
+router.patch('/tasks/short/:id/status', async (req: Request, res: Response) => {
+    try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id)) {
+            return res.status(400).json({ error: 'Invalid short ID' });
+        }
+        const { status } = req.body;
+        if (!status) {
+            return res.status(400).json({ error: 'Status is required' });
+        }
+
+        const task = await getTaskByShortId(id);
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        const updatedTask = await updateTaskStatus(task.id, status);
+        res.json(serializeTask(updatedTask));
+    } catch (err) {
+        console.error('Update task status API error:', err);
+        res.status(500).json({ error: 'Failed to update task status' });
+    }
+});
 
 /** System health */
 router.get('/health', (_req: Request, res: Response) => {
@@ -295,10 +338,10 @@ router.get('/projects/actionable', async (_req: Request, res: Response) => {
                 const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
                 return ids.includes(p.id);
             });
-            
+
             const lastEdited = new Date(p.last_edited_time);
             const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
-            
+
             return {
                 ...serializeProject(p),
                 taskCount: linkedTasks.length,
@@ -335,10 +378,10 @@ router.get('/projects/blocked', async (_req: Request, res: Response) => {
                 const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
                 return ids.includes(p.id);
             });
-            
+
             const lastEdited = new Date(p.last_edited_time);
             const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
-            
+
             return {
                 ...serializeProject(p),
                 taskCount: linkedTasks.length,
@@ -373,7 +416,7 @@ router.get('/projects/summary', async (_req: Request, res: Response) => {
             const category = getProjectStatusCategory(p);
             return (category === 'ACTIVE' || category === 'READY') && isEvergreen(p);
         });
-        
+
         // Find stalled projects (actionable but not updated in 14+ days)
         const stalled = actionable.filter(p => {
             const lastEdited = new Date(p.last_edited_time);
