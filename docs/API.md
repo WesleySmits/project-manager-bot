@@ -240,6 +240,57 @@ Returns all tasks (active and completed).
 | `completed`     | boolean        | True if status matches done/completed/cancelled/canceled |
 | `url`           | string         | Direct Notion URL                                        |
 
+### Get Task by Short ID
+
+```http
+GET /api/tasks/short/:id
+```
+
+Returns a single task using its Notion simple integer ID (the `Task ID` property).
+
+**Path parameters:**
+
+| Parameter | Required | Description                     |
+| --------- | -------- | ------------------------------- |
+| `id`      | Yes      | The integer ID (e.g. `31`)      |
+
+**Response** `200 OK` — task object (same schema as above):
+
+```json
+{
+  "id": "page-uuid",
+  "title": "Write project proposal",
+  "status": "In Progress",
+  "priority": "High",
+  "dueDate": "2026-01-15",
+  "scheduledDate": "2026-01-14",
+  "hasProject": true,
+  "completed": false,
+  "url": "https://notion.so/..."
+}
+```
+
+### Update Task Status by Short ID
+
+```http
+PATCH /api/tasks/short/:id/status
+Content-Type: application/json
+
+{
+  "status": "Done"
+}
+```
+
+Updates the status of a task using its short numeric ID.
+
+**Request body:**
+
+| Field    | Type   | Description                                   |
+| -------- | ------ | --------------------------------------------- |
+| `status` | string | Exact name of the status in Notion (case-sensitive) |
+
+**Response** `200 OK` — returns the updated task object.
+
 ---
 
 ## Projects
