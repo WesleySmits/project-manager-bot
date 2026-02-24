@@ -32,7 +32,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
                 <div className="sidebar-brand">
                     <span className="brand-dot" />
-                    PM
+                    Project Manager
                 </div>
                 <nav className="sidebar-nav">
                     <div className="sidebar-section-label">Navigate</div>

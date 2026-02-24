@@ -30,7 +30,7 @@ export default function Login() {
             <div className="card login-card fade-in">
                 <div style={{ textAlign: 'center', marginBottom: 24 }}>
                     <div className="mobile-brand" style={{ justifyContent: 'center', marginBottom: 16 }}>
-                        <span className="brand-dot" /> PM
+                        <span className="brand-dot" /> Project Manager
                     </div>
                     <h2 style={{ fontSize: 20, margin: 0 }}>Welcome Back</h2>
                     <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 8 }}>
