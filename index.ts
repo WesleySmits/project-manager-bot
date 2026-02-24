@@ -29,6 +29,7 @@ import { collectDailyMetrics } from './src/analytics/collector';
 import { getLatestSnapshot } from './src/analytics/store';
 import { Temporal } from '@js-temporal/polyfill';
 import { BotContext } from './src/types';
+import { rateLimit } from 'express-rate-limit';
 
 // ─── Startup environment validation ──────────────────────────────────────────
 
@@ -176,6 +177,19 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
 
 console.log('🚀 Initializing Express...');
 const app = express();
+
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per `window`
+    standardHeaders: 'draft-7', // combined `RateLimit` header
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { error: 'Too many requests, please try again later.' }
+});
+
+// Apply rate limiter to all API routes
+app.use('/api', limiter);
+
 app.use(cors({
     origin: ALLOWED_ORIGIN,
     credentials: true,
