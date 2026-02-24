@@ -7,11 +7,13 @@ import { cached, invalidate } from './cache';
 
 function requireEnv(name: string): string {
     const value = process.env[name];
-    if (!value) {
+    if (!value && process.env.DEMO_MODE !== 'true') {
         throw new Error(`Required environment variable ${name} is not set.`);
     }
-    return value;
+    return value || 'demo-token';
 }
+
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 const NOTION_TOKEN: string = requireEnv('NOTION_TOKEN');
 const NOTION_TASKS_DB: string = requireEnv('NOTION_TASKS_DB');
@@ -91,6 +93,14 @@ async function notionFetch(url: string, options: RequestInit & { timeoutMs?: num
 }
 
 async function paginatedQuery(databaseId: string, body: Record<string, unknown>): Promise<NotionPage[]> {
+    if (DEMO_MODE) {
+        const { MOCK_TASKS, MOCK_PROJECTS, MOCK_GOALS } = await import('./mockData');
+        if (databaseId === NOTION_TASKS_DB) return MOCK_TASKS;
+        if (databaseId === NOTION_PROJECTS_DB) return MOCK_PROJECTS;
+        if (databaseId === NOTION_GOALS_DB) return MOCK_GOALS;
+        return [];
+    }
+
     const results: NotionPage[] = [];
     let nextCursor: string | null = null;
 
@@ -147,6 +157,11 @@ export async function createPage(
     databaseId: string,
     properties: Record<string, NotionPropertyValue | { title: Array<{ text: { content: string } }> }>,
 ): Promise<NotionPage> {
+    if (DEMO_MODE) {
+        console.log('DEMO MODE: Simulating page creation', properties);
+        return { id: 'new-mock-page', url: '#', created_time: new Date().toISOString(), last_edited_time: new Date().toISOString(), properties: {} } as any;
+    }
+
     const res = await notionFetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: HEADERS,
@@ -172,6 +187,11 @@ export async function updatePage(
     pageId: string,
     properties: Record<string, NotionPropertyValue | null>,
 ): Promise<NotionPage> {
+    if (DEMO_MODE) {
+        console.log('DEMO MODE: Simulating page update', pageId, properties);
+        return { id: pageId, url: '#', created_time: new Date().toISOString(), last_edited_time: new Date().toISOString(), properties: {} } as any;
+    }
+
     const res = await notionFetch(`https://api.notion.com/v1/pages/${pageId}`, {
         method: 'PATCH',
         headers: HEADERS,
@@ -193,6 +213,12 @@ export async function updatePage(
  * Search for pages across the Notion workspace.
  */
 export async function search(query: string, limit: number = 7): Promise<NotionPage[]> {
+    if (DEMO_MODE) {
+        const { MOCK_TASKS, MOCK_PROJECTS, MOCK_GOALS } = await import('./mockData');
+        const all = [...MOCK_TASKS, ...MOCK_PROJECTS, ...MOCK_GOALS];
+        return all.filter(p => JSON.stringify(p).toLowerCase().includes(query.toLowerCase())).slice(0, limit);
+    }
+
     const res = await notionFetch('https://api.notion.com/v1/search', {
         method: 'POST',
         headers: HEADERS,
@@ -217,6 +243,13 @@ export async function search(query: string, limit: number = 7): Promise<NotionPa
  * Get a single Notion page by ID.
  */
 export async function getPage(pageId: string): Promise<NotionPage> {
+    if (DEMO_MODE) {
+        const { MOCK_TASKS, MOCK_PROJECTS, MOCK_GOALS } = await import('./mockData');
+        const page = [...MOCK_TASKS, ...MOCK_PROJECTS, ...MOCK_GOALS].find(p => p.id === pageId);
+        if (!page) throw new Error('Mock page not found');
+        return page;
+    }
+
     const res = await notionFetch(`https://api.notion.com/v1/pages/${pageId}`, {
         method: 'GET',
         headers: HEADERS,

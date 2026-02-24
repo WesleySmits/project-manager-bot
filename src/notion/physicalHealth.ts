@@ -1,5 +1,6 @@
-
 import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage, NotionFilter, NotionSort, NotionPropertyValue, getNumber } from './client';
+
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || null;
 
@@ -78,6 +79,10 @@ function getDay(dateStr: string): string {
  * Sync health data from export to Notion
  */
 export async function syncHealthData(exportData: HealthExport): Promise<{ synced: number, errors: number }> {
+    if (DEMO_MODE) {
+        console.log('DEMO MODE: Simulating health data sync', exportData);
+        return { synced: 10, errors: 0 };
+    }
     const dbId = await getHealthDatabaseId();
     const metrics = exportData.data?.metrics || [];
     const dailyMap = new Map<string, DailyStats>();
@@ -277,6 +282,13 @@ export interface MetricsResponse {
 }
 
 export async function fetchHealthMetrics(names: string[], from?: string, to?: string): Promise<MetricsResponse> {
+    if (DEMO_MODE) {
+        const { MOCK_HEALTH_METRICS } = await import('./mockData');
+        return {
+            ...MOCK_HEALTH_METRICS,
+            dateRange: { from: from || '', to: to || '' }
+        };
+    }
     const dbId = await getHealthDatabaseId();
 
     // Build filter
