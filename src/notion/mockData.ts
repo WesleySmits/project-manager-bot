@@ -39,7 +39,7 @@ export const MOCK_PROJECTS: NotionPage[] = [
         last_edited_time: yesterday.toString(),
         properties: {
             'Name': { type: 'title', title: [{ plain_text: '🤖 Bot Core Development' }] },
-            'Status': { type: 'status', status: { name: 'Active' } },
+            'Status': { type: 'status', status: { name: 'In Progress' } },
             'Goal': { type: 'relation', relation: [{ id: 'goal-1' }] },
             'Description': { type: 'rich_text', rich_text: [{ plain_text: 'Backend and Telegram integration.' }] }
         }

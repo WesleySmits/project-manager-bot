@@ -10,7 +10,7 @@ function requireEnv(name: string): string {
     if (!value && process.env.DEMO_MODE !== 'true') {
         throw new Error(`Required environment variable ${name} is not set.`);
     }
-    return value || 'demo-token';
+    return value || `demo-${name.toLowerCase().replace(/_/g, '-')}`;
 }
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
@@ -428,9 +428,9 @@ export function getNumber(page: NotionPage, propertyName: string): number | null
 // ─── Project status helpers ───────────────────────────────────────────────────
 
 export const PROJECT_STATUS = {
-    ACTIVE: ['in progress'],
-    READY: ['ready to start', 'ready for review'],
-    BACKLOG: ['backlog'],
+    ACTIVE: ['in progress', 'active', 'doing'],
+    READY: ['ready to start', 'ready for review', 'todo', 'to do'],
+    BACKLOG: ['backlog', 'planning', 'someday'],
     PARKED: ['parked', 'on hold'],
     DONE: ['done', 'completed', 'cancelled', 'canceled'],
 } as const;
