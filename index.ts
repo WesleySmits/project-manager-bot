@@ -33,11 +33,14 @@ import { Temporal } from '@js-temporal/polyfill';
 
 const REQUIRED_ENV = [
     'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_CHAT_ID',
     'NOTION_TOKEN',
     'NOTION_TASKS_DB',
     'NOTION_PROJECTS_DB',
     'NOTION_GOALS_DB',
     'JWT_SECRET',
+    'API_KEY',
+    'ALLOWED_ORIGIN',
 ] as const;
 
 const missingEnv = REQUIRED_ENV.filter(key => !process.env[key]);

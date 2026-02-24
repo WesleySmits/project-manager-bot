@@ -8,7 +8,7 @@ import { Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
 
 // Constants
-const ALLOWED_USER_ID = parseInt(process.env.TELEGRAM_CHAT_ID || '1962079073');
+const ALLOWED_USER_ID = parseInt(process.env.TELEGRAM_CHAT_ID || '0');
 const LOG_FILE = path.join(__dirname, '../../logs/pm_commands.log');
 
 /**
