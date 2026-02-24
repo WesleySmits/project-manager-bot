@@ -6,7 +6,7 @@ import { Telegraf, Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
 import { getTodayTasks } from './todayTasks';
 import { runHealthCheck } from '../notion/health';
-import { fetchGoals } from '../notion/client';
+import { fetchGoals, getTitle } from '../notion/client';
 import { getTaskInsights } from '../ai/gemini';
 
 /**
@@ -60,7 +60,7 @@ export async function generateMorningBriefing(): Promise<string> {
         // Cast tasks and goals to match the interfaces expected by Gemini (simple mapping if needed)
         const insights = await getTaskInsights(
             tasks.map(t => ({ title: t.title, priority: t.priority })),
-            goals.map(g => ({ title: g.properties?.['Name']?.title?.[0]?.plain_text || 'Untitled' }))
+            goals.map(g => ({ title: getTitle(g) }))
         );
         lines.push('🧠 *Insight:*');
         lines.push(`_${insights}_`);

@@ -5,13 +5,14 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { RequestPayload, ApprovalAction } from '../types';
 
 const PENDING_FILE = path.join(__dirname, '../../data/pm_pending.json');
 
 export interface ApprovalRequest {
     id: string;
-    type: string;
-    payload: any;
+    type: ApprovalAction;
+    payload: RequestPayload;
     requesterId: string | number;
     status: 'PENDING' | 'APPROVED' | 'REJECTED';
     createdAt: string;
@@ -37,11 +38,11 @@ async function initStore(): Promise<void> {
 
 /**
  * Create a new pending request
- * @param {string} type - 'CREATE_TASK', 'UPDATE_TASK', 'REMINDER'
- * @param {Object} payload - Data for the action
- * @param {string} requesterId - Telegram User ID
+ * @param {ApprovalAction} type - 'CREATE_TASK', 'UPDATE_TASK', 'REMINDER'
+ * @param {RequestPayload} payload - Data for the action
+ * @param {string | number} requesterId - Telegram User ID
  */
-export async function createRequest(type: string, payload: any, requesterId: string | number): Promise<string> {
+export async function createRequest(type: ApprovalAction, payload: RequestPayload, requesterId: string | number): Promise<string> {
     await initStore();
     const file = await fs.readFile(PENDING_FILE, 'utf8');
     const data: Record<string, ApprovalRequest> = JSON.parse(file || '{}');

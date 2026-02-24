@@ -1,4 +1,4 @@
-import { fetchTasks, fetchProjects, isCompleted, isActiveProject, getDate, NotionPage } from '../notion/client';
+import { fetchTasks, fetchProjects, isCompleted, isActiveProject, getDate, NotionPage, getStatus } from '../notion/client';
 import { AnalyticsSnapshot, saveSnapshot } from './store';
 import { Temporal } from '@js-temporal/polyfill';
 
@@ -124,7 +124,7 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
     const avgProjectCompletionDays = projectCountForAvg > 0 ? Math.round(totalProjectDays / projectCountForAvg) : 0;
 
     // 3. Active Status Metrics
-    const activeTasks = tasks.filter(t => !isCompleted(t) && t.properties?.Status?.status?.name !== 'Not started');
+    const activeTasks = tasks.filter(t => !isCompleted(t) && getStatus(t) !== 'Not started');
     // Assuming "Not started" or similar is the initial state.
     // "Active" usually means "In Progress".
 

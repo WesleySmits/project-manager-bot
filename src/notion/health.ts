@@ -6,7 +6,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     fetchTasks, fetchProjects, fetchGoals,
     getTitle, getDescription, hasRelation, isCompleted, getDate,
-    NotionPage
+    NotionPage, getSelect, getStatus
 } from './client';
 
 export interface HealthReport {
@@ -68,8 +68,8 @@ export async function runHealthCheck(): Promise<HealthReport> {
     // 5. Tasks missing required fields (title, status, priority)
     const missingRequiredFields = activeTasks.filter(t => {
         const title = getTitle(t);
-        const priority = t.properties?.Priority?.select?.name;
-        const status = t.properties?.Status?.status?.name;
+        const priority = getSelect(t, 'Priority');
+        const status = getStatus(t);
         return !title || title === 'Untitled' || !priority || !status;
     });
 
@@ -151,8 +151,8 @@ export function formatHealthReport(report: HealthReport): string {
     issues.missingRequiredFields.forEach(t => {
         const missing: string[] = [];
         if (!getTitle(t) || getTitle(t) === 'Untitled') missing.push('title');
-        if (!t.properties?.Priority?.select?.name) missing.push('priority');
-        if (!t.properties?.Status?.status?.name) missing.push('status');
+        if (!getSelect(t, 'Priority')) missing.push('priority');
+        if (!getStatus(t)) missing.push('status');
         lines.push(`  • <a href="${t.url}">${escapeHtml(getTitle(t))}</a> — missing: ${missing.join(', ')}`);
     });
     lines.push('');

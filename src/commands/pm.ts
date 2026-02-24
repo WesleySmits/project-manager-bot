@@ -12,6 +12,7 @@ import {
 } from '../notion/client';
 import { createRequest, updateRequestStatus, getRequest } from '../pm/approvals';
 import { logToDisk } from '../pm/middleware';
+import { BotContext, ApprovalAction } from '../types';
 
 /**
  * Format a single task detail view
@@ -19,8 +20,10 @@ import { logToDisk } from '../pm/middleware';
 function formatTaskDetail(page: NotionPage): string {
     const icon = page.icon?.type === 'emoji' ? page.icon.emoji : '📄';
     const title = getTitle(page);
-    const status = page.properties?.['Status']?.status?.name || 'No Status';
-    const priority = page.properties?.['Priority']?.select?.name || 'No Priority';
+    const statusProp = page.properties?.['Status'];
+    const status = (statusProp && statusProp.type === 'status' && statusProp.status?.name) || 'No Status';
+    const priorityProp = page.properties?.['Priority'];
+    const priority = (priorityProp && priorityProp.type === 'select' && priorityProp.select?.name) || 'No Priority';
     const due = getDate(page, 'Due Date') || getDate(page, 'Due');
     const scheduled = getDate(page, 'Scheduled');
     const desc = getDescription(page) || 'No description';
@@ -57,7 +60,7 @@ function formatTaskDetail(page: NotionPage): string {
 /**
  * Handle /task search <query>
  */
-async function handleTaskSearch(ctx: Context, query: string): Promise<any> {
+async function handleTaskSearch(ctx: BotContext, query: string): Promise<any> {
     await ctx.reply(`🔍 Searching for "${query}"...`);
     try {
         const results = await search(query);
@@ -89,7 +92,7 @@ async function handleTaskSearch(ctx: Context, query: string): Promise<any> {
 /**
  * Handle /task <id> or detail view
  */
-async function handleTaskDetail(ctx: Context, id: string | number): Promise<void> {
+async function handleTaskDetail(ctx: BotContext, id: string | number): Promise<void> {
     try {
         await ctx.replyWithChatAction('typing');
         const page = typeof id === 'number' ? await getTaskByShortId(id) : await getPage(id);
@@ -123,7 +126,7 @@ async function handleTaskDetail(ctx: Context, id: string | number): Promise<void
 /**
  * Handle Command: /task
  */
-export async function handleTaskCommand(ctx: Context): Promise<any> {
+export async function handleTaskCommand(ctx: BotContext): Promise<any> {
     const text = (ctx.message as any)?.text || '';
     const input = text.split(' ').slice(1).join(' ').trim();
 
@@ -151,9 +154,9 @@ export async function handleTaskCommand(ctx: Context): Promise<any> {
 /**
  * Handle Callback: Open Task
  */
-export async function handleCallbackOpen(ctx: Context): Promise<void> {
-    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
-    const id = ctx.match[1]; // Captured from regex `pm:open:(.+)`
+export async function handleCallbackOpen(ctx: BotContext): Promise<void> {
+    const id = ctx.match?.[1]; // Captured from regex `pm:open:(.+)`
+    if (!id) return;
     await ctx.answerCbQuery();
     await handleTaskDetail(ctx, id);
 }
@@ -161,14 +164,15 @@ export async function handleCallbackOpen(ctx: Context): Promise<void> {
 /**
  * Handle Callback: Request Action (Approval Flow)
  */
-export async function handleCallbackRequest(ctx: Context): Promise<void> {
-    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
-    const [_, action, id] = ctx.match; // `pm:req:(.+):(.+)`
+export async function handleCallbackRequest(ctx: BotContext): Promise<void> {
+    const match = ctx.match;
+    if (!match) return;
+    const [_, action, id] = match; // `pm:req:(.+):(.+)`
     const userId = ctx.from?.id;
     if (!userId) return;
 
     // Create pending request
-    const reqId = await createRequest(action.toUpperCase(), { taskId: id }, userId);
+    const reqId = await createRequest(action.toUpperCase() as ApprovalAction, { taskId: id }, userId);
 
     logToDisk(`REQUEST: User ${userId} requested ${action} on task ${id} (ReqID: ${reqId})`);
 
@@ -189,9 +193,10 @@ export async function handleCallbackRequest(ctx: Context): Promise<void> {
 /**
  * Handle Callback: Resolve Request (Approve/Reject)
  */
-export async function handleCallbackResolve(ctx: Context): Promise<any> {
-    // @ts-ignore - ctx.match is populated by Telegraf regex matcher
-    const [_, decision, reqId] = ctx.match; // `pm:(approve|reject):(.+)`
+export async function handleCallbackResolve(ctx: BotContext): Promise<any> {
+    const match = ctx.match;
+    if (!match) return;
+    const [_, decision, reqId] = match; // `pm:(approve|reject):(.+)`
     const userId = ctx.from?.id;
 
     if (!userId) return;

@@ -4,7 +4,7 @@
  */
 import '@js-temporal/polyfill';
 import 'dotenv/config';
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf } from 'telegraf';
 import express from 'express';
 import cors from 'cors';
 import * as path from 'path';
@@ -28,6 +28,7 @@ import cookieParser from 'cookie-parser';
 import { collectDailyMetrics } from './src/analytics/collector';
 import { getLatestSnapshot } from './src/analytics/store';
 import { Temporal } from '@js-temporal/polyfill';
+import { BotContext } from './src/types';
 
 // ─── Startup environment validation ──────────────────────────────────────────
 
@@ -52,7 +53,7 @@ if (missingEnv.length > 0) {
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
 
 console.log('🚀 Initializing Telegraf...');
-const bot = new Telegraf(TELEGRAM_TOKEN);
+const bot = new Telegraf<BotContext>(TELEGRAM_TOKEN);
 console.log('✅ Telegraf initialized');
 
 // Middleware (Security & Logging)
@@ -60,7 +61,7 @@ bot.use(authMiddleware);
 bot.use(loggerMiddleware);
 
 // /start command
-bot.command('start', async (ctx: Context) => {
+bot.command('start', async (ctx: BotContext) => {
     await ctx.reply(
         '👋 *Welcome to Notion Task Bot!*\n\n' +
         '📅 *Daily*\n' +
@@ -76,7 +77,7 @@ bot.command('start', async (ctx: Context) => {
 });
 
 // /today_tasks command
-bot.command('today_tasks', async (ctx: Context) => {
+bot.command('today_tasks', async (ctx: BotContext) => {
     try {
         await ctx.reply('📥 Fetching your tasks...');
         const tasks = await getTodayTasks(5);
@@ -95,7 +96,7 @@ bot.command('morning', handleMorningBriefing);
 
 // PM Commands
 bot.command('task', handleTaskCommand);
-bot.command('strategy', async (ctx: Context) => {
+bot.command('strategy', async (ctx: BotContext) => {
     try {
         await ctx.reply('🧠 Analyzing strategy & roadmap...');
         const analysis = await runStrategyAnalysis();
@@ -126,7 +127,7 @@ bot.command('strategy', async (ctx: Context) => {
 });
 
 // AI Improve Command
-bot.command('improve', async (ctx: Context) => {
+bot.command('improve', async (ctx: BotContext) => {
     try {
         await ctx.replyWithChatAction('typing');
         const analysis = await runStrategyAnalysis();

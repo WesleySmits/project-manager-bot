@@ -3,7 +3,7 @@
  * Fetches and scores tasks to show the most important items for today
  */
 import { Temporal } from '@js-temporal/polyfill';
-import { fetchTasks, getTitle, isCompleted, getDate, hasRelation, NotionPage } from '../notion/client';
+import { fetchTasks, getTitle, isCompleted, getDate, hasRelation, NotionPage, getSelect, getStatus } from '../notion/client';
 
 interface ScoredTask {
     id: string;
@@ -69,7 +69,7 @@ export function scoreTask(task: NotionPage): number {
 
     // Priority score (25% weight)
     let priorityScore = 0;
-    const priority = props['Priority']?.select?.name?.toLowerCase() || '';
+    const priority = getSelect(task, 'Priority')?.toLowerCase() || '';
     if (priority.includes('high') || priority.includes('p1') || priority.includes('urgent')) {
         priorityScore = 1.0;
     } else if (priority.includes('medium') || priority.includes('p2')) {
@@ -80,7 +80,7 @@ export function scoreTask(task: NotionPage): number {
 
     // Status score (5% weight) - In Progress tasks get a boost
     let statusScore = 0;
-    const status = props['Status']?.status?.name?.toLowerCase() || '';
+    const status = getStatus(task)?.toLowerCase() || '';
     if (status.includes('in progress') || status.includes('doing') || status.includes('active')) {
         statusScore = 1.0;
     } else if (status.includes('todo') || status.includes('to do') || status.includes('not started')) {
@@ -132,8 +132,8 @@ export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
     const scoredTasks: ScoredTask[] = activeTasks.map(t => ({
         id: t.id,
         title: getTitle(t),
-        priority: t.properties?.['Priority']?.select?.name || undefined,
-        status: t.properties?.['Status']?.status?.name || undefined,
+        priority: getSelect(t, 'Priority') || undefined,
+        status: getStatus(t) || undefined,
         dueDate: getDate(t, 'Due Date') || getDate(t, 'Due'),
         scheduledDate: getDate(t, 'Scheduled'),
         hasProject: hasRelation(t),

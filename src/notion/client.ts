@@ -26,20 +26,28 @@ const HEADERS: Record<string, string> = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-/** A single Notion property value — the API returns varying shapes per type. */
-export interface NotionPropertyValue {
-    type: string;
-    id?: string;
-    title?: Array<{ plain_text: string }>;
-    rich_text?: Array<{ plain_text: string }>;
-    status?: { name: string };
-    select?: { name: string };
-    relation?: Array<{ id: string }>;
-    date?: { start: string; end: string | null };
-    checkbox?: boolean;
-    number?: number | null;
-    formula?: { type: string; string?: string; number?: number; boolean?: boolean };
-}
+/** Specific Notion property types */
+export interface NotionTitleProperty { type: 'title'; title: Array<{ plain_text: string }> }
+export interface NotionRichTextProperty { type: 'rich_text'; rich_text: Array<{ plain_text: string }> }
+export interface NotionStatusProperty { type: 'status'; status: { name: string } }
+export interface NotionSelectProperty { type: 'select'; select: { name: string } }
+export interface NotionRelationProperty { type: 'relation'; relation: Array<{ id: string }> }
+export interface NotionDateProperty { type: 'date'; date: { start: string; end: string | null } | null }
+export interface NotionCheckboxProperty { type: 'checkbox'; checkbox: boolean }
+export interface NotionNumberProperty { type: 'number'; number: number | null }
+export interface NotionFormulaProperty { type: 'formula'; formula: { type: string; string?: string; number?: number; boolean?: boolean } }
+
+/** A union of all possible Notion property values */
+export type NotionPropertyValue =
+    | NotionTitleProperty
+    | NotionRichTextProperty
+    | NotionStatusProperty
+    | NotionSelectProperty
+    | NotionRelationProperty
+    | NotionDateProperty
+    | NotionCheckboxProperty
+    | NotionNumberProperty
+    | NotionFormulaProperty;
 
 export interface NotionPage {
     id: string;
@@ -274,7 +282,7 @@ export function getTitle(page: NotionPage): string {
     const candidates = ['Title', 'Name', 'Goal', 'Project', 'Task'];
     for (const name of candidates) {
         const prop = props[name] ?? props[Object.keys(props).find(k => k.toLowerCase() === name.toLowerCase()) ?? ''];
-        if (prop?.rich_text && prop.rich_text.length > 0) {
+        if (prop && prop.type === 'rich_text' && prop.rich_text.length > 0) {
             return prop.rich_text[0].plain_text;
         }
     }
@@ -287,8 +295,11 @@ export function getTitle(page: NotionPage): string {
  */
 export function getDescription(page: NotionPage): string | null {
     const props = page.properties ?? {};
-    const descProp = props['Description']?.rich_text ?? props['Notes']?.rich_text ?? props['Summary']?.rich_text;
-    return descProp?.[0]?.plain_text ?? null;
+    const p = props['Description'] ?? props['Notes'] ?? props['Summary'];
+    if (p && p.type === 'rich_text' && p.rich_text.length > 0) {
+        return p.rich_text[0].plain_text;
+    }
+    return null;
 }
 
 /**
@@ -324,7 +335,8 @@ export function hasRelation(page: NotionPage, propertyName: string | null = null
  * Return `true` if the page status matches any done/completed/cancelled value.
  */
 export function isCompleted(page: NotionPage): boolean {
-    const status = page.properties?.['Status']?.status?.name ?? '';
+    const prop = page.properties?.['Status'];
+    const status = (prop && prop.type === 'status' && prop.status?.name) || '';
     return /completed|canceled|cancelled|done/i.test(status);
 }
 
@@ -332,7 +344,52 @@ export function isCompleted(page: NotionPage): boolean {
  * Extract the start date string from a Notion date property.
  */
 export function getDate(page: NotionPage, propertyName: string): string | null {
-    return page.properties?.[propertyName]?.date?.start ?? null;
+    const prop = page.properties?.[propertyName];
+    if (prop && prop.type === 'date' && prop.date) {
+        return prop.date.start;
+    }
+    return null;
+}
+
+/**
+ * Extract the status name from a Notion status property.
+ */
+export function getStatus(page: NotionPage, propertyName: string = 'Status'): string | null {
+    const prop = page.properties?.[propertyName];
+    if (prop && prop.type === 'status' && prop.status) {
+        return prop.status.name;
+    }
+    return null;
+}
+
+/**
+ * Extract the name from a Notion select property.
+ */
+export function getSelect(page: NotionPage, propertyName: string): string | null {
+    const prop = page.properties?.[propertyName];
+    if (prop && prop.type === 'select' && prop.select) {
+        return prop.select.name;
+    }
+    return null;
+}
+
+/**
+ * Get value from a checkbox property.
+ */
+export function getCheckbox(page: NotionPage, propertyName: string): boolean {
+    const prop = page.properties?.[propertyName];
+    return prop?.type === 'checkbox' && prop.checkbox === true;
+}
+
+/**
+ * Get value from a number property.
+ */
+export function getNumber(page: NotionPage, propertyName: string): number | null {
+    const prop = page.properties?.[propertyName];
+    if (prop && prop.type === 'number') {
+        return prop.number;
+    }
+    return null;
 }
 
 // ─── Project status helpers ───────────────────────────────────────────────────
@@ -348,9 +405,10 @@ export const PROJECT_STATUS = {
 export type ProjectStatusCategory = 'ACTIVE' | 'READY' | 'BACKLOG' | 'PARKED' | 'DONE' | 'UNKNOWN';
 
 export function getProjectStatusCategory(page: NotionPage): ProjectStatusCategory {
+    const prop = page.properties?.['Status'];
     const status = (
-        page.properties?.['Status']?.status?.name ??
-        page.properties?.['Status']?.select?.name ??
+        (prop && prop.type === 'status' && prop.status?.name) ||
+        (prop && prop.type === 'select' && prop.select?.name) ||
         ''
     ).trim().toLowerCase();
 
@@ -364,12 +422,14 @@ export function getProjectStatusCategory(page: NotionPage): ProjectStatusCategor
 
 /** True if the project's "Evergreen" checkbox is checked. */
 export function isEvergreen(page: NotionPage): boolean {
-    return page.properties?.['Evergreen']?.checkbox === true;
+    const prop = page.properties?.['Evergreen'];
+    return prop?.type === 'checkbox' && prop.checkbox === true;
 }
 
 /** True if the project's "Blocked?" checkbox is checked. */
 export function isBlocked(page: NotionPage): boolean {
-    return page.properties?.['Blocked?']?.checkbox === true;
+    const prop = page.properties?.['Blocked?'];
+    return prop?.type === 'checkbox' && prop.checkbox === true;
 }
 
 /**

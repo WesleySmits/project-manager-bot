@@ -17,6 +17,7 @@ import {
     getDate,
     isCompleted,
     NotionPage,
+    getSelect
 } from './client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,7 +142,7 @@ export async function getWeeklyReview(weekStartStr?: string): Promise<WeeklyRevi
             id: t.id,
             title: getTitle(t),
             completedDate: getDate(t, 'Completed Date')!,
-            priority: t.properties?.Priority?.select?.name ?? null,
+            priority: getSelect(t, 'Priority'),
             url: t.url,
         }))
         .sort((a, b) => a.completedDate.localeCompare(b.completedDate));

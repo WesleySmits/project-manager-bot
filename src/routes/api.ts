@@ -2,7 +2,7 @@
  * REST API Routes for Web Interface
  */
 import { Router, Request, Response } from 'express';
-import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage, getTaskByShortId, updateTaskStatus } from '../notion/client';
+import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage, getTaskByShortId, updateTaskStatus, getStatus, getSelect } from '../notion/client';
 import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
@@ -17,8 +17,8 @@ function serializeTask(t: NotionPage) {
     return {
         id: t.id,
         title: getTitle(t),
-        status: t.properties?.Status?.status?.name || null,
-        priority: t.properties?.Priority?.select?.name || null,
+        status: getStatus(t) || null,
+        priority: getSelect(t, 'Priority') || null,
         dueDate: getDate(t, 'Due Date') || getDate(t, 'Due') || null,
         scheduledDate: getDate(t, 'Scheduled') || null,
         hasProject: hasRelation(t),
@@ -31,7 +31,7 @@ function serializeProject(p: NotionPage) {
     return {
         id: p.id,
         title: getTitle(p),
-        status: p.properties?.Status?.status?.name || p.properties?.Status?.select?.name || null,
+        status: getStatus(p) || getSelect(p, 'Status') || null,
         statusCategory: getProjectStatusCategory(p),
         blocked: isBlocked(p),
         active: isActiveProject(p),

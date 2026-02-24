@@ -1,5 +1,5 @@
 
-import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage, NotionFilter, NotionSort, NotionPropertyValue } from './client';
+import { search, queryDatabaseFiltered, createPage, updatePage, getDate, NotionPage, NotionFilter, NotionSort, NotionPropertyValue, getNumber } from './client';
 
 let HEALTH_DB_ID: string | null = process.env.NOTION_HEALTH_DB_ID || null;
 
@@ -335,11 +335,11 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
 
             // Special handling for sleep
             if (name === 'sleep_analysis') {
-                 const total = page.properties['Sleep Total']?.number || 0;
-                 const deep = page.properties['Sleep Deep']?.number || 0;
-                 const core = page.properties['Sleep Core']?.number || 0;
-                 const rem = page.properties['Sleep REM']?.number || 0;
-                 const awake = page.properties['Sleep Awake']?.number || 0;
+                 const total = getNumber(page, 'Sleep Total') || 0;
+                 const deep = getNumber(page, 'Sleep Deep') || 0;
+                 const core = getNumber(page, 'Sleep Core') || 0;
+                 const rem = getNumber(page, 'Sleep REM') || 0;
+                 const awake = getNumber(page, 'Sleep Awake') || 0;
 
                  // If all zeros, maybe skip? or push 0.
                  data.push({
@@ -352,7 +352,7 @@ export async function fetchHealthMetrics(names: string[], from?: string, to?: st
                  continue;
             }
 
-            const val = page.properties?.[propName]?.number;
+            const val = getNumber(page, propName);
             if (typeof val === 'number') {
                 data.push({ date, qty: val });
             }
