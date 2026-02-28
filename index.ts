@@ -179,7 +179,7 @@ console.log('🚀 Initializing Express...');
 const app = express();
 
 // Trust reverse proxy (required when behind a load balancer/reverse proxy)
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Rate limiting
 const limiter = rateLimit({
