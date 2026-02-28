@@ -43,6 +43,7 @@ const REQUIRED_ENV = [
     'JWT_SECRET',
     'API_KEY',
     'ALLOWED_ORIGIN',
+    'RUNNER_TOKEN',
 ] as const;
 
 const missingEnv = REQUIRED_ENV.filter(key => !process.env[key]);
