@@ -35,7 +35,7 @@ export const apiKeyAuthMiddleware = (req: Request, res: Response, next: NextFunc
     }
 
         const RUNNER_TOKEN = process.env.RUNNER_TOKEN;
-    if (providedKey && (providedKey === API_KEY || (RUNNER_TOKEN && providedKey === RUNNER_TOKEN))) {
+    if (providedKey && (providedKey.trim() === API_KEY.trim() || (RUNNER_TOKEN && providedKey === RUNNER_TOKEN))) {
         // Mark the request as authenticated via API key so downstream
         // middleware / routes know the identity.
         (req as Request & { apiKeyAuthenticated: boolean }).apiKeyAuthenticated = true;
