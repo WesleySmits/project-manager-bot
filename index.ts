@@ -22,6 +22,7 @@ import apiRoutes from './src/routes/api';
 import authRoutes from './src/routes/auth';
 import healthDataRoutes from './src/routes/healthData';
 import analyticsRoutes from './src/routes/analytics';
+import autonomousRoutes from './src/routes/autonomous';
 import { jwtAuthMiddleware } from './src/middleware/expressAuth';
 import { apiKeyAuthMiddleware, requireAuth } from './src/middleware/apiKeyAuth';
 import cookieParser from 'cookie-parser';
@@ -213,6 +214,7 @@ app.use(jwtAuthMiddleware);
 app.use('/api', apiRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/autonomous', autonomousRoutes);
 
 // Morning briefing endpoint — requires API key or JWT
 app.post('/morning-brief', requireAuth, async (_req, res) => {

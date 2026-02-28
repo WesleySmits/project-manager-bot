@@ -4,7 +4,7 @@ import {
     getTitle, 
     getStatus, 
     getCheckbox, 
-    getNumber, 
+    getNumber, updatePage, 
     NotionPage, 
     isActiveProject,
     getSelect
