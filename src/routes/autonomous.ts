@@ -116,7 +116,7 @@ router.patch('/tasks/:id/status', async (req: Request, res: Response) => {
             props['Blocked Reason'] = { rich_text: [{ text: { content: blockedReason } }] };
         }
 
-        await updatePage(id, props);
+        await updatePage(id as string, props);
         res.json({ ok: true });
     } catch (error) {
         console.error('Task status update error:', error);
