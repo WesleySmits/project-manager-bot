@@ -42,6 +42,8 @@ export const apiKeyAuthMiddleware = (req: Request, res: Response, next: NextFunc
         return;
     }
 
+    console.log(`[Auth-Audit] Failed API Key attempt on ${req.path}. Header keys seen: ${Object.keys(req.headers).join(", ")}`);
+
     // Key missing or wrong — fall through to JWT middleware instead of
     // immediately rejecting, so a valid JWT cookie still works on the same routes.
     next();
