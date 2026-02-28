@@ -178,6 +178,9 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:5173';
 console.log('🚀 Initializing Express...');
 const app = express();
 
+// Trust reverse proxy (required when behind a load balancer/reverse proxy)
+app.set('trust proxy', true);
+
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
