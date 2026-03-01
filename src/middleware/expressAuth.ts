@@ -17,6 +17,11 @@ interface AuthenticatedRequest extends Request {
  */
 export const jwtAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
     // Skip auth for public routes
+    // Skip if already authenticated via API key
+    if ((req as any).apiKeyAuthenticated) {
+        next();
+        return;
+    }
     if (req.path.startsWith('/api/auth') || req.path === '/api/health') {
         next();
         return;
