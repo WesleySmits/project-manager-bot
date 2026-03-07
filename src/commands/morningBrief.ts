@@ -5,20 +5,43 @@
 import { Telegraf, Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
 import { getTodayTasks } from './todayTasks';
-import { runHealthCheck } from '../notion/health';
-import { fetchGoals, getTitle } from '../notion/client';
+import { getProvider } from '../providers';
 import { getTaskInsights } from '../ai/gemini';
+
+// Health check is provider-specific — import separately only if Notion is active,
+// falling back to provider.healthCheck() otherwise.
+async function getHealthIssues(): Promise<{ orphanedTasks: number; projectsWithoutGoal: number; overdueTasks: number }> {
+    try {
+        // Try Notion-specific health check for richer data
+        const { runHealthCheck } = await import('../notion/health');
+        const health = await runHealthCheck();
+        return {
+            orphanedTasks: health.issues.orphanedTasks.length,
+            projectsWithoutGoal: health.issues.projectsWithoutGoal.length,
+            overdueTasks: health.issues.overdueDueDate.length,
+        };
+    } catch {
+        // Fallback: use provider health check
+        const result = await getProvider().healthCheck();
+        const overdue = result.issues.filter(i => i.message.toLowerCase().includes('overdue')).length;
+        return {
+            orphanedTasks: 0,
+            projectsWithoutGoal: 0,
+            overdueTasks: overdue,
+        };
+    }
+}
 
 /**
  * Generate morning briefing message with "why" explanations
- * @returns {Promise<string>}
  */
 export async function generateMorningBriefing(): Promise<string> {
-    // parallel fetch for performance
-    const [tasks, health, goals] = await Promise.all([
+    const provider = getProvider();
+
+    const [tasks, healthData, goals] = await Promise.all([
         getTodayTasks(3),
-        runHealthCheck(),
-        fetchGoals()
+        getHealthIssues(),
+        provider.fetchGoals(),
     ]);
 
     const lines: string[] = [];
@@ -28,16 +51,14 @@ export async function generateMorningBriefing(): Promise<string> {
     lines.push('');
 
     // 2. ISSUES (if any)
-    const { issues } = health;
     const criticalIssues: string[] = [];
-
-    if (issues.orphanedTasks.length > 0) criticalIssues.push(`${issues.orphanedTasks.length} orphaned tasks`);
-    if (issues.projectsWithoutGoal.length > 0) criticalIssues.push(`${issues.projectsWithoutGoal.length} projects w/o goal`);
-    if (issues.overdueDueDate.length > 0) criticalIssues.push(`${issues.overdueDueDate.length} overdue tasks`);
+    if (healthData.orphanedTasks > 0) criticalIssues.push(`${healthData.orphanedTasks} orphaned tasks`);
+    if (healthData.projectsWithoutGoal > 0) criticalIssues.push(`${healthData.projectsWithoutGoal} projects w/o goal`);
+    if (healthData.overdueTasks > 0) criticalIssues.push(`${healthData.overdueTasks} overdue tasks`);
 
     if (criticalIssues.length > 0) {
         lines.push('🚨 *Attention Needed:*');
-        lines.push(`You have ${criticalIssues.join(', ')} to fix in Notion.`);
+        lines.push(`You have ${criticalIssues.join(', ')} to address.`);
         lines.push('');
     }
 
@@ -47,20 +68,17 @@ export async function generateMorningBriefing(): Promise<string> {
     } else {
         lines.push('🎯 *Top 3 Priorities:*');
         tasks.forEach((task, i) => {
-            // Priority emoji
             const priority = task.priority || '';
             const emoji = priority.toLowerCase().includes('high') || priority.toLowerCase().includes('p1') ? '🔴' :
                 priority.toLowerCase().includes('medium') || priority.toLowerCase().includes('p2') ? '🟠' : '🟢';
-
             lines.push(`${i + 1}. ${emoji} *${task.title}*`);
         });
         lines.push('');
 
         // 4. AI INSIGHTS
-        // Cast tasks and goals to match the interfaces expected by Gemini (simple mapping if needed)
         const insights = await getTaskInsights(
             tasks.map(t => ({ title: t.title, priority: t.priority })),
-            goals.map(g => ({ title: getTitle(g) }))
+            goals.map(g => ({ title: g.title })),
         );
         lines.push('🧠 *Insight:*');
         lines.push(`_${insights}_`);
@@ -71,16 +89,10 @@ export async function generateMorningBriefing(): Promise<string> {
 
 /**
  * Send morning briefing to configured Telegram chat
- * @param {Telegraf} bot - Telegram bot instance
- * @returns {Promise<void>}
  */
 export async function sendMorningBriefing(bot: Telegraf): Promise<void> {
     const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-    if (!CHAT_ID) {
-        console.error('⚠️ TELEGRAM_CHAT_ID not set, skipping morning briefing');
-        throw new Error('TELEGRAM_CHAT_ID not configured');
-    }
+    if (!CHAT_ID) throw new Error('TELEGRAM_CHAT_ID not configured');
 
     try {
         const message = await generateMorningBriefing();

@@ -3,7 +3,6 @@
  */
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { StrategyAnalysis } from '../pm/strategy';
-import { NotionPage, getTitle } from '../notion/client';
 
 // Get API Key from env
 const API_KEY: string | undefined = process.env.GEMINI_API_KEY;
@@ -43,8 +42,8 @@ export async function getStrategicAdvice(analysis: StrategyAnalysis): Promise<st
         data: {
             active_projects: metrics.activeProjectsCount,
             project_limit: 5,
-            stalled_goals: issues.stalledGoals.map((g: NotionPage) => getTitle(g)),
-            zombie_projects: issues.zombieProjects.map((p: NotionPage) => getTitle(p)),
+            stalled_goals: issues.stalledGoals.map(g => g.title),
+            zombie_projects: issues.zombieProjects.map(p => p.title),
             goal_progress: progress.map(p => ({ goal: p.title, percent: p.percent })),
         },
         instructions: `

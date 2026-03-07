@@ -1,3 +1,8 @@
+/**
+ * Autonomous Queue Routes — Notion-specific (uses Notion filter queries).
+ * These routes are only available when PROVIDER=notion.
+ * Future: abstract into provider.queryTasksByFilter() if needed.
+ */
 import { Router, Request, Response } from 'express';
 import { 
     queryDatabaseFiltered, 

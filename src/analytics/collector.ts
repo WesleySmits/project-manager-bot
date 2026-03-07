@@ -1,4 +1,4 @@
-import { fetchTasks, fetchProjects, isCompleted, isActiveProject, getDate, NotionPage, getStatus } from '../notion/client';
+import { getProvider, Task, Project } from '../providers';
 import { AnalyticsSnapshot, saveSnapshot } from './store';
 import { Temporal } from '@js-temporal/polyfill';
 
@@ -22,7 +22,8 @@ function daysBetween(start: Temporal.PlainDate, end: Temporal.PlainDate): number
 }
 
 export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
-    const [tasks, projects] = await Promise.all([fetchTasks(), fetchProjects()]);
+    const provider = getProvider();
+    const [tasks, projects] = await Promise.all([provider.fetchTasks(), provider.fetchProjects()]);
 
     const now = Temporal.Now.plainDateISO();
     const todayStr = now.toString();
@@ -32,31 +33,31 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
     const startOfMonth = now.with({ day: 1 });
 
     // 1. Completion Counts
-    const completedTasks = tasks.filter(t => isCompleted(t));
-    const completedProjects = projects.filter(p => isCompleted(p)); // Assuming isCompleted works for projects or uses status
+    const completedTasks = tasks.filter(t => t.completed);
+    const completedProjects = projects.filter(p => p.statusCategory === 'DONE');
 
     const tasksCompletedToday = completedTasks.filter(t => {
-        const date = parseDate(getDate(t, 'Completed Date')); // Ensure 'Completed Date' property exists in Notion
+        const date = parseDate((t.raw as any)?.['Completed Date']?.date?.start ?? null); // Ensure 'Completed Date' property exists in Notion
         return date && date.equals(now);
     }).length;
 
     const tasksCompletedThisWeek = completedTasks.filter(t => {
-        const date = parseDate(getDate(t, 'Completed Date'));
+        const date = parseDate((t.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, startOfWeek) >= 0;
     }).length;
 
     const tasksCompletedThisMonth = completedTasks.filter(t => {
-        const date = parseDate(getDate(t, 'Completed Date'));
+        const date = parseDate((t.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, startOfMonth) >= 0;
     }).length;
 
     const projectsCompletedThisWeek = completedProjects.filter(p => {
-        const date = parseDate(getDate(p, 'Completed Date'));
+        const date = parseDate((p.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, startOfWeek) >= 0;
     }).length;
 
     const projectsCompletedThisMonth = completedProjects.filter(p => {
-        const date = parseDate(getDate(p, 'Completed Date'));
+        const date = parseDate((p.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, startOfMonth) >= 0;
     }).length;
 
@@ -83,13 +84,13 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
 
     const thirtyDaysAgo = now.subtract({ days: 30 });
     const recentCompletedTasks = completedTasks.filter(t => {
-        const date = parseDate(getDate(t, 'Completed Date'));
+        const date = parseDate((t.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, thirtyDaysAgo) >= 0;
     });
 
     for (const t of recentCompletedTasks) {
-        const created = parseDate(t.created_time.split('T')[0]);
-        const completed = parseDate(getDate(t, 'Completed Date'));
+        const created = parseDate((t.raw as any)?.['Created Time']?.created_time?.split('T')[0] ?? null);
+        const completed = parseDate((t.raw as any)?.['Completed Date']?.date?.start ?? null);
 
         if (created && completed) {
             const days = daysBetween(created, completed);
@@ -106,13 +107,13 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
     let totalProjectDays = 0;
     let projectCountForAvg = 0;
     const recentCompletedProjects = completedProjects.filter(p => {
-        const date = parseDate(getDate(p, 'Completed Date'));
+        const date = parseDate((p.raw as any)?.['Completed Date']?.date?.start ?? null);
         return date && Temporal.PlainDate.compare(date, thirtyDaysAgo) >= 0;
     });
 
     for (const p of recentCompletedProjects) {
-         const created = parseDate(p.created_time.split('T')[0]);
-         const completed = parseDate(getDate(p, 'Completed Date'));
+         const created = parseDate((p.raw as any)?.['Created Time']?.created_time?.split('T')[0] ?? null);
+         const completed = parseDate((p.raw as any)?.['Completed Date']?.date?.start ?? null);
          if (created && completed) {
              const days = daysBetween(created, completed);
              if (days >= 0) {
@@ -124,7 +125,7 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
     const avgProjectCompletionDays = projectCountForAvg > 0 ? Math.round(totalProjectDays / projectCountForAvg) : 0;
 
     // 3. Active Status Metrics
-    const activeTasks = tasks.filter(t => !isCompleted(t) && getStatus(t) !== 'Not started');
+    const activeTasks = tasks.filter(t => !t.completed && t.status !== 'Not started');
     // Assuming "Not started" or similar is the initial state.
     // "Active" usually means "In Progress".
 
@@ -135,7 +136,7 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
     for (const t of activeTasks) {
         // "Days in Active" logic.
         // User has "Activated Date".
-        const activated = parseDate(getDate(t, 'Activated Date'));
+        const activated = parseDate((t.raw as any)?.['Activated Date']?.date?.start ?? null);
         if (activated) {
             const days = daysBetween(activated, now);
             if (days >= 0) {
@@ -161,7 +162,7 @@ export async function collectDailyMetrics(): Promise<AnalyticsSnapshot> {
             avgProjectCompletionDays,
             avgTaskActiveDays,
             activeTasksCount: stuckTasksCount,
-            activeProjectsCount: projects.filter(isActiveProject).length
+            activeProjectsCount: projects.filter(p => p.active).length
         }
     };
 

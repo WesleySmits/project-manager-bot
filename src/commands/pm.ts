@@ -1,35 +1,27 @@
 /**
  * Project Manager Commands
  * /task <query|id>
- * /task search <query>
- * /tasks due <today|tomorrow|overdue>
  */
 import { Context } from 'telegraf';
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    search, getPage, getTitle, getDescription, getDate, hasRelation,
-    NotionPage, getTaskByShortId
-} from '../notion/client';
+import { getProvider, Task } from '../providers';
 import { createRequest, updateRequestStatus, getRequest } from '../pm/approvals';
 import { logToDisk } from '../pm/middleware';
 import { BotContext, ApprovalAction } from '../types';
 
 /**
- * Format a single task detail view
+ * Format a single task detail view using the normalized Task type
  */
-function formatTaskDetail(page: NotionPage): string {
-    const icon = page.icon?.type === 'emoji' ? page.icon.emoji : '📄';
-    const title = getTitle(page);
-    const statusProp = page.properties?.['Status'];
-    const status = (statusProp && statusProp.type === 'status' && statusProp.status?.name) || 'No Status';
-    const priorityProp = page.properties?.['Priority'];
-    const priority = (priorityProp && priorityProp.type === 'select' && priorityProp.select?.name) || 'No Priority';
-    const due = getDate(page, 'Due Date') || getDate(page, 'Due');
-    const scheduled = getDate(page, 'Scheduled');
-    const desc = getDescription(page) || 'No description';
-    const url = page.url;
+function formatTaskDetail(task: Task): string {
+    const title = task.title;
+    const status = task.status || 'No Status';
+    const priority = task.priority || 'No Priority';
+    const due = task.dueDate;
+    const scheduled = task.scheduledDate;
+    const desc = task.description || 'No description';
+    const url = task.url;
 
-    let text = `${icon} *${title}*\n`;
+    let text = `📄 *${title}*\n`;
     text += `────────────────\n`;
     text += `🏷 Status: ${status} | Priority: ${priority}\n`;
 
@@ -46,13 +38,10 @@ function formatTaskDetail(page: NotionPage): string {
         text += `🗓 Scheduled: ${dateStr}${isOverdue ? ' ⚠️ OVERDUE' : ''}\n`;
     }
 
-    // Relations (Projects/Goals)
-    // Note: We only have IDs here usually, actual names require extra fetches
-    // For Phase 1 we just indicate presence
-    if (hasRelation(page, 'Project')) text += `🏗 Linked to Project\n`;
+    if (task.projectId) text += `🏗 Linked to Project\n`;
 
     text += `\n📝 *Description:*\n${desc.substring(0, 1000)}${desc.length > 1000 ? '...' : ''}\n`;
-    text += `\n[Open in Notion](${url})`;
+    text += `\n[Open ↗](${url})`;
 
     return text;
 }
@@ -63,29 +52,23 @@ function formatTaskDetail(page: NotionPage): string {
 async function handleTaskSearch(ctx: BotContext, query: string): Promise<any> {
     await ctx.reply(`🔍 Searching for "${query}"...`);
     try {
-        const results = await search(query);
+        const provider = getProvider();
+        const results = await provider.searchTasks(query, 5);
 
-        if (results.length === 0) {
-            return ctx.reply('❌ No results found.');
-        }
+        if (results.length === 0) return ctx.reply('❌ No results found.');
 
-        // Send each result with an "Open" button
-        for (const page of results.slice(0, 5)) {
-            const title = getTitle(page);
-            const icon = page.icon?.type === 'emoji' ? page.icon.emoji : '📄';
-
-            await ctx.reply(`${icon} ${title}`, {
+        for (const task of results) {
+            await ctx.reply(`📄 ${task.title}`, {
                 reply_markup: {
                     inline_keyboard: [[
-                        { text: '📂 Open', callback_data: `pm:open:${page.id}` }
+                        { text: '📂 Open', callback_data: `pm:open:${task.id}` }
                     ]]
                 }
             });
         }
     } catch (err) {
         console.error(err);
-        const errorMessage = (err instanceof Error) ? err.message : String(err);
-        ctx.reply(`Error searching: ${errorMessage}`);
+        ctx.reply(`Error searching: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -95,31 +78,63 @@ async function handleTaskSearch(ctx: BotContext, query: string): Promise<any> {
 async function handleTaskDetail(ctx: BotContext, id: string | number): Promise<void> {
     try {
         await ctx.replyWithChatAction('typing');
-        const page = typeof id === 'number' ? await getTaskByShortId(id) : await getPage(id);
+        const provider = getProvider();
 
-        if (!page) {
+        let task: Task | null = null;
+        if (typeof id === 'number') {
+            task = await provider.getTaskByShortId(id);
+        } else {
+            // For full UUID IDs, search by ID — fall back to Notion-specific getPage if needed
+            const tasks = await provider.fetchTasks();
+            task = tasks.find(t => t.id === id) ?? null;
+
+            // If not found in active tasks, try provider-specific lookup
+            if (!task && process.env.PROVIDER === 'notion') {
+                const { getPage } = await import('../notion/client');
+                const { NotionProvider } = await import('../providers/notion/index');
+                const page = await getPage(id);
+                const np = new NotionProvider();
+                const allTasks = await np.fetchTasks();
+                task = allTasks.find(t => t.id === id) ?? null;
+                if (!task) {
+                    // Map the page directly
+                    const { getTitle, getDescription, getStatus, getSelect, getDate } = await import('../notion/client');
+                    task = {
+                        id: page.id,
+                        shortId: null,
+                        title: getTitle(page),
+                        description: getDescription(page),
+                        status: getStatus(page) ?? 'unknown',
+                        priority: getSelect(page, 'Priority'),
+                        dueDate: getDate(page, 'Due Date') ?? getDate(page, 'Due'),
+                        scheduledDate: getDate(page, 'Scheduled'),
+                        projectId: null,
+                        url: page.url,
+                        completed: false,
+                    };
+                }
+            }
+        }
+
+        if (!task) {
             await ctx.reply(`❌ Task not found for ID: ${id}`);
             return;
         }
 
-        const text = formatTaskDetail(page);
+        const text = formatTaskDetail(task);
 
-        // Add actions (Phase 2 approval actions)
         await ctx.reply(text, {
             parse_mode: 'Markdown',
             reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '✅ Complete', callback_data: `pm:req:complete:${page.id}` },
-                        { text: '📅 Remind', callback_data: `pm:req:remind:${page.id}` }
-                    ]
-                ]
+                inline_keyboard: [[
+                    { text: '✅ Complete', callback_data: `pm:req:complete:${task.id}` },
+                    { text: '📅 Remind', callback_data: `pm:req:remind:${task.id}` }
+                ]]
             }
         });
     } catch (err) {
         console.error(err);
-        const errorMessage = (err instanceof Error) ? err.message : String(err);
-        ctx.reply(`Error fetching task: ${errorMessage}`);
+        ctx.reply(`Error fetching task: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -130,32 +145,25 @@ export async function handleTaskCommand(ctx: BotContext): Promise<any> {
     const text = (ctx.message as any)?.text || '';
     const input = text.split(' ').slice(1).join(' ').trim();
 
-    if (!input) {
-        return ctx.reply('Usage: /task <search query> OR /task <id>');
-    }
+    if (!input) return ctx.reply('Usage: /task <search query> OR /task <id>');
 
     if (input.startsWith('search ')) {
         return handleTaskSearch(ctx, input.replace('search ', '').trim());
     }
 
-    // If input looks like UUID, treat as ID, otherwise search
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}/.test(input);
     const isNumericId = /^\d+$/.test(input);
 
-    if (isUUID) {
-        return handleTaskDetail(ctx, input);
-    } else if (isNumericId) {
-        return handleTaskDetail(ctx, parseInt(input, 10));
-    } else {
-        return handleTaskSearch(ctx, input);
-    }
+    if (isUUID) return handleTaskDetail(ctx, input);
+    if (isNumericId) return handleTaskDetail(ctx, parseInt(input, 10));
+    return handleTaskSearch(ctx, input);
 }
 
 /**
  * Handle Callback: Open Task
  */
 export async function handleCallbackOpen(ctx: BotContext): Promise<void> {
-    const id = ctx.match?.[1]; // Captured from regex `pm:open:(.+)`
+    const id = ctx.match?.[1];
     if (!id) return;
     await ctx.answerCbQuery();
     await handleTaskDetail(ctx, id);
@@ -167,23 +175,18 @@ export async function handleCallbackOpen(ctx: BotContext): Promise<void> {
 export async function handleCallbackRequest(ctx: BotContext): Promise<void> {
     const match = ctx.match;
     if (!match) return;
-    const [_, action, id] = match; // `pm:req:(.+):(.+)`
+    const [_, action, id] = match;
     const userId = ctx.from?.id;
     if (!userId) return;
 
-    // Create pending request
     const reqId = await createRequest(action.toUpperCase() as ApprovalAction, { taskId: id }, userId);
-
     logToDisk(`REQUEST: User ${userId} requested ${action} on task ${id} (ReqID: ${reqId})`);
 
-    // Edit message to show approval UI
     await ctx.editMessageReplyMarkup({
-        inline_keyboard: [
-            [
-                { text: '👍 Approve', callback_data: `pm:approve:${reqId}` },
-                { text: '👎 Reject', callback_data: `pm:reject:${reqId}` }
-            ]
-        ]
+        inline_keyboard: [[
+            { text: '👍 Approve', callback_data: `pm:approve:${reqId}` },
+            { text: '👎 Reject', callback_data: `pm:reject:${reqId}` }
+        ]]
     });
 
     await ctx.reply(`📝 *Request Created*\nAction: ${action.toUpperCase()}\nID: \`${reqId}\`\n\n(Waiting for approval...)`, { parse_mode: 'Markdown' });
@@ -196,9 +199,8 @@ export async function handleCallbackRequest(ctx: BotContext): Promise<void> {
 export async function handleCallbackResolve(ctx: BotContext): Promise<any> {
     const match = ctx.match;
     if (!match) return;
-    const [_, decision, reqId] = match; // `pm:(approve|reject):(.+)`
+    const [_, decision, reqId] = match;
     const userId = ctx.from?.id;
-
     if (!userId) return;
 
     try {
@@ -211,9 +213,8 @@ export async function handleCallbackResolve(ctx: BotContext): Promise<any> {
 
         logToDisk(`RESOLVE: User ${userId} ${status} request ${reqId}`);
 
-        // Update UI
         const emoji = status === 'APPROVED' ? '✅' : '❌';
-        await ctx.editMessageText(`📝 *Request Resolved*\nID: \`${reqId}\`\nStatus: ${emoji} ${status}\n\n(No changes made to Notion in Read-Only mode)`, { parse_mode: 'Markdown' });
+        await ctx.editMessageText(`📝 *Request Resolved*\nID: \`${reqId}\`\nStatus: ${emoji} ${status}`, { parse_mode: 'Markdown' });
 
         await ctx.answerCbQuery(`Request ${status}`);
     } catch (err) {

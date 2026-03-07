@@ -2,7 +2,7 @@
  * REST API Routes for Web Interface
  */
 import { Router, Request, Response } from 'express';
-import { fetchTasks, fetchProjects, fetchGoals, getTitle, getDate, isCompleted, hasRelation, getRelationIds, isActiveProject, isEvergreen, getProjectStatusCategory, isBlocked, getDescription, NotionPage, getTaskByShortId, updateTaskStatus, getStatus, getSelect } from '../notion/client';
+import { getProvider, Task, Project, Goal } from '../providers';
 import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
@@ -11,42 +11,43 @@ import { getStrategicAdvice, generateMotivation } from '../ai/gemini';
 
 const router = Router();
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Serializers (normalized types → API response shape) ─────────────────────
 
-function serializeTask(t: NotionPage) {
+function serializeTask(t: Task) {
     return {
         id: t.id,
-        title: getTitle(t),
-        status: getStatus(t) || null,
-        priority: getSelect(t, 'Priority') || null,
-        dueDate: getDate(t, 'Due Date') || getDate(t, 'Due') || null,
-        scheduledDate: getDate(t, 'Scheduled') || null,
-        hasProject: hasRelation(t),
-        completed: isCompleted(t),
+        shortId: t.shortId,
+        title: t.title,
+        status: t.status ?? null,
+        priority: t.priority ?? null,
+        dueDate: t.dueDate ?? null,
+        scheduledDate: t.scheduledDate ?? null,
+        hasProject: t.projectId !== null,
+        completed: t.completed,
         url: t.url,
     };
 }
 
-function serializeProject(p: NotionPage) {
+function serializeProject(p: Project) {
     return {
         id: p.id,
-        title: getTitle(p),
-        status: getStatus(p) || getSelect(p, 'Status') || null,
-        statusCategory: getProjectStatusCategory(p),
-        blocked: isBlocked(p),
-        active: isActiveProject(p),
-        evergreen: isEvergreen(p),
-        description: getDescription(p),
+        title: p.title,
+        status: p.status ?? null,
+        statusCategory: p.statusCategory,
+        blocked: p.blocked,
+        active: p.active,
+        evergreen: p.evergreen,
+        description: p.description,
         url: p.url,
     };
 }
 
-function serializeGoal(g: NotionPage) {
+function serializeGoal(g: Goal) {
     return {
         id: g.id,
-        title: getTitle(g),
-        completed: isCompleted(g),
-        description: getDescription(g),
+        title: g.title,
+        completed: g.completed,
+        description: g.description,
         url: g.url,
     };
 }
@@ -57,13 +58,9 @@ function serializeGoal(g: NotionPage) {
 router.get('/tasks/short/:id', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) {
-            return res.status(400).json({ error: 'Invalid short ID' });
-        }
-        const task = await getTaskByShortId(id);
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
+        if (isNaN(id)) return res.status(400).json({ error: 'Invalid short ID' });
+        const task = await getProvider().getTaskByShortId(id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
         res.json(serializeTask(task));
     } catch (err) {
         console.error('Task by short ID API error:', err);
@@ -75,21 +72,16 @@ router.get('/tasks/short/:id', async (req: Request, res: Response) => {
 router.patch('/tasks/short/:id/status', async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) {
-            return res.status(400).json({ error: 'Invalid short ID' });
-        }
+        if (isNaN(id)) return res.status(400).json({ error: 'Invalid short ID' });
         const { status } = req.body;
-        if (!status) {
-            return res.status(400).json({ error: 'Status is required' });
-        }
+        if (!status) return res.status(400).json({ error: 'Status is required' });
 
-        const task = await getTaskByShortId(id);
-        if (!task) {
-            return res.status(404).json({ error: 'Task not found' });
-        }
+        const provider = getProvider();
+        const task = await provider.getTaskByShortId(id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
 
-        const updatedTask = await updateTaskStatus(task.id, status);
-        res.json(serializeTask(updatedTask));
+        const updated = await provider.updateTaskStatus(task.id, status);
+        res.json(serializeTask(updated));
     } catch (err) {
         console.error('Update task status API error:', err);
         res.status(500).json({ error: 'Failed to update task status' });
@@ -98,9 +90,11 @@ router.patch('/tasks/short/:id/status', async (req: Request, res: Response) => {
 
 /** System health */
 router.get('/health', (_req: Request, res: Response) => {
+    const provider = getProvider();
     res.json({
         status: 'ok',
         service: 'project-manager',
+        provider: provider.name,
         timestamp: new Date().toISOString(),
     });
 });
@@ -108,66 +102,72 @@ router.get('/health', (_req: Request, res: Response) => {
 /** Dashboard aggregated data */
 router.get('/dashboard', async (_req: Request, res: Response) => {
     try {
-        const [tasks, projects, goals, health, todayTasks] = await Promise.all([
-            fetchTasks(),
-            fetchProjects(),
-            fetchGoals(),
-            runHealthCheck(),
+        const provider = getProvider();
+        const [tasks, projects, goals, todayTasks] = await Promise.all([
+            provider.fetchTasks(),
+            provider.fetchProjects(),
+            provider.fetchGoals(),
             getTodayTasks(5),
         ]);
 
-        const activeTasks = tasks.filter(t => !isCompleted(t));
-        const activeProjects = projects.filter(isActiveProject);
-        const activeGoals = goals.filter(g => !isCompleted(g));
+        const activeTasks = tasks.filter(t => !t.completed);
+        const activeProjects = projects.filter(p => p.active);
+        const activeGoals = goals.filter(g => !g.completed);
         const analysis = await runStrategyAnalysis();
 
-        const totalIssues =
-            health.issues.orphanedTasks.length +
-            health.issues.projectsWithoutGoal.length +
-            health.issues.overdueDueDate.length +
-            health.issues.overdueScheduled.length +
-            health.issues.missingRequiredFields.length;
+        // Health check (Notion-specific, graceful degradation for other providers)
+        let healthIssues = 0;
+        let overdueTasks: any[] = [];
+        try {
+            const health = await runHealthCheck();
+            healthIssues =
+                health.issues.orphanedTasks.length +
+                health.issues.projectsWithoutGoal.length +
+                health.issues.overdueDueDate.length +
+                health.issues.overdueScheduled.length +
+                health.issues.missingRequiredFields.length;
+            overdueTasks = health.issues.overdueDueDate.map((t: any) => ({
+                id: t.id,
+                shortId: null,
+                title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                status: t.properties?.['Status']?.status?.name ?? null,
+                priority: t.properties?.['Priority']?.select?.name ?? null,
+                dueDate: t.properties?.['Due Date']?.date?.start ?? null,
+                scheduledDate: null,
+                projectId: null,
+                url: t.url,
+                completed: false,
+            }));
+        } catch {
+            const ph = await provider.healthCheck();
+            healthIssues = ph.issues.filter(i => i.severity === 'error').length;
+        }
 
-        // Calculate today's impact: which projects/goals are affected by today's tasks
+        // Today's impact: which projects/goals are touched by today's top tasks
         const todayTaskIds = new Set(todayTasks.map((t: { id: string }) => t.id));
-        const projectsAffected = new Map<string, { title: string; url: string; taskCount: number }>();
+        const projectsAffectedMap = new Map<string, { title: string; url: string; taskCount: number }>();
 
         for (const task of activeTasks) {
-            if (!todayTaskIds.has(task.id)) continue;
-            const relIds = getRelationIds(task, 'Project') || getRelationIds(task, 'Projects') || [];
-            for (const pid of relIds) {
-                const proj = projects.find(p => p.id === pid);
-                if (proj && isActiveProject(proj)) {
-                    const existing = projectsAffected.get(pid);
-                    if (existing) {
-                        existing.taskCount++;
-                    } else {
-                        projectsAffected.set(pid, {
-                            title: getTitle(proj),
-                            url: proj.url,
-                            taskCount: 1,
-                        });
-                    }
-                }
+            if (!todayTaskIds.has(task.id) || !task.projectId) continue;
+            const proj = projects.find(p => p.id === task.projectId);
+            if (proj?.active) {
+                const existing = projectsAffectedMap.get(task.projectId);
+                if (existing) existing.taskCount++;
+                else projectsAffectedMap.set(task.projectId, { title: proj.title, url: proj.url, taskCount: 1 });
             }
         }
 
-        // Find goals linked to affected projects
-        const goalsAffected: Array<{ title: string; url: string; progress: number; projectsInGoal: number }> = [];
-        const affectedProjectIds = new Set(projectsAffected.keys());
-        for (const goal of activeGoals) {
-            const goalRelIds = getRelationIds(goal, 'Projects') || getRelationIds(goal, 'Project') || [];
-            const hasAffectedProject = goalRelIds.some(id => affectedProjectIds.has(id));
-            if (hasAffectedProject) {
-                const progress = analysis.progress.find(p => p.id === goal.id);
-                goalsAffected.push({
-                    title: getTitle(goal),
-                    url: goal.url,
-                    progress: progress ? progress.percent : 0,
-                    projectsInGoal: goalRelIds.length,
-                });
-            }
-        }
+        const affectedProjectIds = new Set(projectsAffectedMap.keys());
+        const goalsAffected = activeGoals
+            .filter(g => g.id && projects.some(p => p.goalIds.includes(g.id) && affectedProjectIds.has(p.id)))
+            .map(g => {
+                const progress = analysis.progress.find(p => p.id === g.id);
+                return {
+                    title: g.title,
+                    url: g.url,
+                    progress: progress?.percent ?? 0,
+                };
+            });
 
         res.json({
             metrics: {
@@ -177,12 +177,12 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
                 totalProjects: projects.length,
                 activeGoals: activeGoals.length,
                 totalGoals: goals.length,
-                healthIssues: totalIssues,
+                healthIssues,
             },
             todayTasks,
-            overdueTasks: health.issues.overdueDueDate.map(serializeTask),
+            overdueTasks: overdueTasks.map(serializeTask),
             todayImpact: {
-                projectsAffected: [...projectsAffected.values()],
+                projectsAffected: [...projectsAffectedMap.values()],
                 goalsAffected,
             },
         });
@@ -195,34 +195,26 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
 /** All tasks */
 router.get('/tasks', async (_req: Request, res: Response) => {
     try {
-        const tasks = await fetchTasks();
+        const tasks = await getProvider().fetchTasks();
         res.json(tasks.map(serializeTask));
     } catch (err) {
-        console.error('Tasks API error:', err);
         res.status(500).json({ error: 'Failed to load tasks' });
     }
 });
 
-/** All projects */
+/** All projects with task counts */
 router.get('/projects', async (_req: Request, res: Response) => {
     try {
-        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
-        const activeTasks = tasks.filter(t => !isCompleted(t));
+        const provider = getProvider();
+        const [projects, tasks] = await Promise.all([provider.fetchProjects(), provider.fetchTasks()]);
+        const activeTasks = tasks.filter(t => !t.completed);
 
-        const serialized = projects.map(p => {
-            const linkedTasks = activeTasks.filter(t => {
-                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
-                return ids.includes(p.id);
-            });
-            return {
-                ...serializeProject(p),
-                taskCount: linkedTasks.length,
-            };
-        });
-
+        const serialized = projects.map(p => ({
+            ...serializeProject(p),
+            taskCount: activeTasks.filter(t => t.projectId === p.id).length,
+        }));
         res.json(serialized);
     } catch (err) {
-        console.error('Projects API error:', err);
         res.status(500).json({ error: 'Failed to load projects' });
     }
 });
@@ -230,44 +222,65 @@ router.get('/projects', async (_req: Request, res: Response) => {
 /** All goals with progress */
 router.get('/goals', async (_req: Request, res: Response) => {
     try {
-        const analysis = await runStrategyAnalysis();
-        const goals = await fetchGoals();
+        const provider = getProvider();
+        const [analysis, goals] = await Promise.all([runStrategyAnalysis(), provider.fetchGoals()]);
 
-        const serialized = goals.filter(g => !isCompleted(g)).map(g => {
+        const serialized = goals.filter(g => !g.completed).map(g => {
             const progress = analysis.progress.find(p => p.id === g.id);
             return {
                 ...serializeGoal(g),
-                progress: progress ? progress.percent : 0,
-                projectCount: progress ? progress.total : 0,
-                completedProjects: progress ? progress.completed : 0,
+                progress: progress?.percent ?? 0,
+                projectCount: progress?.total ?? 0,
+                completedProjects: progress?.completed ?? 0,
             };
         });
-
         res.json(serialized);
     } catch (err) {
-        console.error('Goals API error:', err);
         res.status(500).json({ error: 'Failed to load goals' });
     }
 });
 
-/** Health analysis */
+/** Health analysis (Notion-specific; degrades gracefully for other providers) */
 router.get('/analysis/health', async (_req: Request, res: Response) => {
     try {
-        const health = await runHealthCheck();
-        res.json({
-            totals: health.totals,
-            issues: {
-                orphanedTasks: health.issues.orphanedTasks.map(serializeTask),
-                projectsWithoutGoal: health.issues.projectsWithoutGoal.map(serializeProject),
-                overdueDueDate: health.issues.overdueDueDate.map(serializeTask),
-                overdueScheduled: health.issues.overdueScheduled.map(serializeTask),
-                missingRequiredFields: health.issues.missingRequiredFields.map(serializeTask),
-                missingDescription: health.issues.missingDescription.map(serializeTask),
-                projectsMissingDescription: health.issues.projectsMissingDescription.map(serializeProject),
-            },
-        });
+        if (process.env.PROVIDER === 'notion' || !process.env.PROVIDER) {
+            const health = await runHealthCheck();
+            return res.json({
+                totals: health.totals,
+                issues: {
+                    orphanedTasks: health.issues.orphanedTasks.map((t: any) => serializeTask({
+                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
+                        projectId: null, url: t.url ?? '', completed: false,
+                    } as any)),
+                    projectsWithoutGoal: health.issues.projectsWithoutGoal.map((p: any) => serializeProject({
+                        id: p.id, title: p.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                        status: null, statusCategory: 'UNKNOWN', blocked: false,
+                        active: false, evergreen: false, goalIds: [], url: p.url ?? '', description: null,
+                    })),
+                    overdueDueDate: health.issues.overdueDueDate.map((t: any) => serializeTask({
+                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
+                        projectId: null, url: t.url ?? '', completed: false,
+                    } as any)),
+                    overdueScheduled: health.issues.overdueScheduled.map((t: any) => serializeTask({
+                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
+                        projectId: null, url: t.url ?? '', completed: false,
+                    } as any)),
+                    missingRequiredFields: health.issues.missingRequiredFields.map((t: any) => serializeTask({
+                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
+                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
+                        projectId: null, url: t.url ?? '', completed: false,
+                    } as any)),
+                },
+            });
+        }
+
+        // Generic fallback for non-Notion providers
+        const result = await getProvider().healthCheck();
+        res.json({ totals: result.stats, issues: result.issues });
     } catch (err) {
-        console.error('Health API error:', err);
         res.status(500).json({ error: 'Failed to run health check' });
     }
 });
@@ -286,7 +299,6 @@ router.get('/analysis/strategy', async (_req: Request, res: Response) => {
             progress: analysis.progress,
         });
     } catch (err) {
-        console.error('Strategy API error:', err);
         res.status(500).json({ error: 'Failed to run strategy analysis' });
     }
 });
@@ -298,140 +310,94 @@ router.post('/ai/insight', async (_req: Request, res: Response) => {
         const advice = await getStrategicAdvice(analysis);
         res.json({ insight: advice });
     } catch (err) {
-        console.error('AI Insight API error:', err);
         res.status(500).json({ error: 'Failed to generate insight' });
     }
 });
 
-/** AI motivation - generate a motivational message based on today's work */
+/** AI motivation */
 router.post('/ai/motivation', async (_req: Request, res: Response) => {
     try {
-        const [todayTasks, goals, projects] = await Promise.all([
+        const provider = getProvider();
+        const [todayTasks, goals, projects, analysis] = await Promise.all([
             getTodayTasks(5),
-            fetchGoals(),
-            fetchProjects(),
+            provider.fetchGoals(),
+            provider.fetchProjects(),
+            runStrategyAnalysis(),
         ]);
-        const analysis = await runStrategyAnalysis();
-        const activeGoals = goals.filter(g => !isCompleted(g));
-        const motivation = await generateMotivation(todayTasks, activeGoals.map(g => ({
-            title: getTitle(g),
-            progress: analysis.progress.find(p => p.id === g.id)?.percent || 0,
-        })), projects.filter(isActiveProject).map(getTitle));
+        const activeGoals = goals.filter(g => !g.completed);
+        const motivation = await generateMotivation(
+            todayTasks,
+            activeGoals.map(g => ({ title: g.title, progress: analysis.progress.find(p => p.id === g.id)?.percent ?? 0 })),
+            projects.filter(p => p.active).map(p => p.title),
+        );
         res.json({ motivation });
     } catch (err) {
-        console.error('Motivation API error:', err);
         res.status(500).json({ error: 'Failed to generate motivation' });
     }
 });
 
-/** Actionable projects - only projects that can be acted on today */
+/** Actionable projects */
 router.get('/projects/actionable', async (_req: Request, res: Response) => {
     try {
-        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
-        const activeTasks = tasks.filter(t => !isCompleted(t));
+        const provider = getProvider();
+        const [projects, tasks] = await Promise.all([provider.fetchProjects(), provider.fetchTasks()]);
+        const activeTasks = tasks.filter(t => !t.completed);
 
-        // Actionable = active status + not blocked + not evergreen
-        const actionableProjects = projects.filter(isActiveProject);
-
-        const serialized = actionableProjects.map(p => {
-            const linkedTasks = activeTasks.filter(t => {
-                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
-                return ids.includes(p.id);
-            });
-
-            const lastEdited = new Date(p.last_edited_time);
-            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
-
-            return {
-                ...serializeProject(p),
-                taskCount: linkedTasks.length,
-                lastUpdated: p.last_edited_time,
-                daysSinceUpdate,
-                stalled: daysSinceUpdate > 14, // Flag projects not touched in 2 weeks
-            };
+        const actionable = projects.filter(p => p.active).map(p => {
+            const taskCount = activeTasks.filter(t => t.projectId === p.id).length;
+            const raw = p.raw as any;
+            const lastEdited = raw?.last_edited_time ? new Date(raw.last_edited_time) : null;
+            const daysSinceUpdate = lastEdited ? Math.floor((Date.now() - lastEdited.getTime()) / 86_400_000) : null;
+            return { ...serializeProject(p), taskCount, daysSinceUpdate, stalled: (daysSinceUpdate ?? 0) > 14 };
         });
 
-        res.json({
-            count: serialized.length,
-            projects: serialized,
-        });
+        res.json({ count: actionable.length, projects: actionable });
     } catch (err) {
-        console.error('Actionable projects API error:', err);
         res.status(500).json({ error: 'Failed to load actionable projects' });
     }
 });
 
-/** Blocked projects - waiting on external dependencies */
+/** Blocked projects */
 router.get('/projects/blocked', async (_req: Request, res: Response) => {
     try {
-        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
-        const activeTasks = tasks.filter(t => !isCompleted(t));
+        const provider = getProvider();
+        const [projects, tasks] = await Promise.all([provider.fetchProjects(), provider.fetchTasks()]);
+        const activeTasks = tasks.filter(t => !t.completed);
 
-        // Blocked = has active/ready status AND blocked checkbox
-        const blockedProjects = projects.filter(p => {
-            const category = getProjectStatusCategory(p);
-            return (category === 'ACTIVE' || category === 'READY') && isBlocked(p);
-        });
-
-        const serialized = blockedProjects.map(p => {
-            const linkedTasks = activeTasks.filter(t => {
-                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
-                return ids.includes(p.id);
+        const blocked = projects
+            .filter(p => p.blocked && (p.statusCategory === 'ACTIVE' || p.statusCategory === 'READY'))
+            .map(p => {
+                const taskCount = activeTasks.filter(t => t.projectId === p.id).length;
+                const raw = p.raw as any;
+                const lastEdited = raw?.last_edited_time ? new Date(raw.last_edited_time) : null;
+                const daysSinceUpdate = lastEdited ? Math.floor((Date.now() - lastEdited.getTime()) / 86_400_000) : null;
+                return { ...serializeProject(p), taskCount, daysSinceUpdate, needsFollowUp: (daysSinceUpdate ?? 0) > 7 };
             });
 
-            const lastEdited = new Date(p.last_edited_time);
-            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
-
-            return {
-                ...serializeProject(p),
-                taskCount: linkedTasks.length,
-                lastUpdated: p.last_edited_time,
-                daysSinceUpdate,
-                needsFollowUp: daysSinceUpdate > 7, // Flag if no update in a week
-            };
-        });
-
-        res.json({
-            count: serialized.length,
-            projects: serialized,
-        });
+        res.json({ count: blocked.length, projects: blocked });
     } catch (err) {
-        console.error('Blocked projects API error:', err);
         res.status(500).json({ error: 'Failed to load blocked projects' });
     }
 });
 
-/** Project summary - high-level overview for daily briefings */
+/** Project summary */
 router.get('/projects/summary', async (_req: Request, res: Response) => {
     try {
-        const [projects, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
-        const activeTasks = tasks.filter(t => !isCompleted(t));
+        const provider = getProvider();
+        const [projects, tasks] = await Promise.all([provider.fetchProjects(), provider.fetchTasks()]);
+        const activeTasks = tasks.filter(t => !t.completed);
 
-        const actionable = projects.filter(isActiveProject);
-        const blocked = projects.filter(p => {
-            const category = getProjectStatusCategory(p);
-            return (category === 'ACTIVE' || category === 'READY') && isBlocked(p);
-        });
-        const evergreen = projects.filter(p => {
-            const category = getProjectStatusCategory(p);
-            return (category === 'ACTIVE' || category === 'READY') && isEvergreen(p);
-        });
+        const actionable = projects.filter(p => p.active);
+        const blocked = projects.filter(p => p.blocked && (p.statusCategory === 'ACTIVE' || p.statusCategory === 'READY'));
+        const evergreen = projects.filter(p => p.evergreen && (p.statusCategory === 'ACTIVE' || p.statusCategory === 'READY'));
 
-        // Find stalled projects (actionable but not updated in 14+ days)
         const stalled = actionable.filter(p => {
-            const lastEdited = new Date(p.last_edited_time);
-            const daysSinceUpdate = Math.floor((Date.now() - lastEdited.getTime()) / (1000 * 60 * 60 * 24));
-            return daysSinceUpdate > 14;
+            const raw = p.raw as any;
+            if (!raw?.last_edited_time) return false;
+            return Math.floor((Date.now() - new Date(raw.last_edited_time).getTime()) / 86_400_000) > 14;
         });
 
-        // Count tasks per project type
-        const actionableTaskCount = actionable.reduce((sum, p) => {
-            const count = activeTasks.filter(t => {
-                const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
-                return ids.includes(p.id);
-            }).length;
-            return sum + count;
-        }, 0);
+        const actionableTaskCount = actionable.reduce((sum, p) => sum + activeTasks.filter(t => t.projectId === p.id).length, 0);
 
         res.json({
             overview: {
@@ -439,54 +405,31 @@ router.get('/projects/summary', async (_req: Request, res: Response) => {
                 blocked: blocked.length,
                 evergreen: evergreen.length,
                 stalled: stalled.length,
-                total: projects.filter(p => {
-                    const cat = getProjectStatusCategory(p);
-                    return cat === 'ACTIVE' || cat === 'READY';
-                }).length,
+                total: projects.filter(p => p.statusCategory === 'ACTIVE' || p.statusCategory === 'READY').length,
             },
             actionableProjects: actionable.map(p => ({
-                title: getTitle(p),
-                url: p.url,
-                taskCount: activeTasks.filter(t => {
-                    const ids = getRelationIds(t, 'Project') || getRelationIds(t, 'Projects');
-                    return ids.includes(p.id);
-                }).length,
+                title: p.title, url: p.url,
+                taskCount: activeTasks.filter(t => t.projectId === p.id).length,
             })),
-            blockedProjects: blocked.map(p => ({
-                title: getTitle(p),
-                url: p.url,
-                daysSinceUpdate: Math.floor((Date.now() - new Date(p.last_edited_time).getTime()) / (1000 * 60 * 60 * 24)),
-            })),
-            stalledProjects: stalled.map(p => ({
-                title: getTitle(p),
-                url: p.url,
-                daysSinceUpdate: Math.floor((Date.now() - new Date(p.last_edited_time).getTime()) / (1000 * 60 * 60 * 24)),
-            })),
+            blockedProjects: blocked.map(p => {
+                const raw = p.raw as any;
+                return { title: p.title, url: p.url, daysSinceUpdate: raw?.last_edited_time ? Math.floor((Date.now() - new Date(raw.last_edited_time).getTime()) / 86_400_000) : null };
+            }),
+            stalledProjects: stalled.map(p => {
+                const raw = p.raw as any;
+                return { title: p.title, url: p.url, daysSinceUpdate: Math.floor((Date.now() - new Date(raw.last_edited_time).getTime()) / 86_400_000) };
+            }),
             metrics: {
                 actionableTaskCount,
                 avgTasksPerActionableProject: actionable.length > 0 ? (actionableTaskCount / actionable.length).toFixed(1) : '0',
             },
         });
     } catch (err) {
-        console.error('Project summary API error:', err);
         res.status(500).json({ error: 'Failed to generate project summary' });
     }
 });
 
-/**
- * Weekly Review — completed tasks, projects, and goals for a given ISO week.
- *
- * Query params:
- *   ?week=YYYY-MM-DD  (optional) Monday of the desired week. Defaults to current week.
- *
- * Examples:
- *   GET /api/weekly-review
- *   GET /api/weekly-review?week=2026-02-16
- *
- * Errors:
- *   400  if `week` is not a valid date or not a Monday
- *   500  on unexpected failures
- */
+/** Weekly review (Notion-specific) */
 router.get('/weekly-review', async (req: Request, res: Response) => {
     try {
         const weekParam = typeof req.query.week === 'string' ? req.query.week : undefined;
