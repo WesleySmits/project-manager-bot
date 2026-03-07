@@ -9,6 +9,7 @@ import express from 'express';
 import cors from 'cors';
 import * as path from 'path';
 import { getTodayTasks, formatTodayTasks } from './src/commands/todayTasks';
+import { getTaskByShortId, updateTaskStatus, updatePage } from './src/notion/client';
 import { handleNotionHealth } from './src/commands/notionHealth';
 import {
     handleTaskCommand, handleCallbackOpen,
@@ -96,6 +97,58 @@ bot.command('today_tasks', async (ctx: BotContext) => {
 // /notion_health command
 bot.command('notion_health', handleNotionHealth);
 bot.command('morning', handleMorningBriefing);
+
+// /done [task#] - Mark a task as Done
+bot.command('done', async (ctx: BotContext) => {
+    const args = (ctx.message as any)?.text?.split(' ').slice(1);
+    const idStr = args?.[0];
+    const taskId = idStr ? parseInt(idStr, 10) : NaN;
+    if (isNaN(taskId)) {
+        await ctx.reply('Usage: /done <task_number>\nExample: /done 42');
+        return;
+    }
+    try {
+        await ctx.replyWithChatAction('typing');
+        const task = await getTaskByShortId(taskId);
+        if (!task) {
+            await ctx.reply(`❌ Task #${taskId} not found.`);
+            return;
+        }
+        await updateTaskStatus(task.id, 'Done');
+        await ctx.reply(`✅ Task #${taskId} marked as *Done!*\n_${(task.properties?.['Name'] as any)?.['title']?.[0]?.plain_text || 'Task'}_`, { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('done command error:', err);
+        await ctx.reply('❌ Failed to update task. Try again.');
+    }
+});
+
+// /snooze [task#] - Move task to next day (update Scheduled date)
+bot.command('snooze', async (ctx: BotContext) => {
+    const args = (ctx.message as any)?.text?.split(' ').slice(1);
+    const idStr = args?.[0];
+    const taskId = idStr ? parseInt(idStr, 10) : NaN;
+    if (isNaN(taskId)) {
+        await ctx.reply('Usage: /snooze <task_number>\nExample: /snooze 42');
+        return;
+    }
+    try {
+        await ctx.replyWithChatAction('typing');
+        const task = await getTaskByShortId(taskId);
+        if (!task) {
+            await ctx.reply(`❌ Task #${taskId} not found.`);
+            return;
+        }
+        // Schedule for tomorrow
+        const tomorrow = Temporal.Now.plainDateISO().add({ days: 1 }).toString();
+        await updatePage(task.id, {
+            'Scheduled': { type: 'date', date: { start: tomorrow, end: null } } as any
+        });
+        await ctx.reply(`⏰ Task #${taskId} snoozed to *${tomorrow}*\n_${(task.properties?.['Name'] as any)?.['title']?.[0]?.plain_text || 'Task'}_`, { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('snooze command error:', err);
+        await ctx.reply('❌ Failed to snooze task. Try again.');
+    }
+});
 
 // PM Commands
 bot.command('task', handleTaskCommand);
@@ -269,6 +322,8 @@ console.log('🚀 Updating Telegram commands...');
 bot.telegram.setMyCommands([
     { command: 'morning', description: '☀️ Morning briefing' },
     { command: 'today_tasks', description: '📅 Top 5 tasks for today' },
+    { command: 'done', description: '✅ Mark task as Done (/done 42)' },
+    { command: 'snooze', description: '⏰ Snooze task to tomorrow (/snooze 42)' },
     { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
     { command: 'improve', description: '✨ AI Advice on what to fix next' },
     { command: 'task', description: '🔎 Search or view tasks' },
@@ -307,3 +362,19 @@ setInterval(async () => {
         console.error('❌ Daily analytics scheduler failed:', err);
     }
 }, 60 * 60 * 1000); // Check every hour
+
+// Morning briefing scheduler — fires at 07:00 MSK (04:00 UTC) every day
+setInterval(async () => {
+    try {
+        const now = Temporal.Now.zonedDateTimeISO('UTC');
+        const hour = now.hour;
+        const minute = now.minute;
+        // Fire between 04:00 and 04:01 UTC (07:00 MSK)
+        if (hour === 4 && minute === 0) {
+            console.log('☀️ Sending scheduled morning briefing...');
+            await sendMorningBriefing(bot);
+        }
+    } catch (err) {
+        console.error('❌ Morning briefing scheduler error:', err);
+    }
+}, 60 * 1000); // Check every minute
