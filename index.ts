@@ -19,6 +19,8 @@ import { runStrategyAnalysis, formatStrategyReport } from './src/pm/strategy';
 import { getStrategicAdvice } from './src/ai/gemini';
 import { authMiddleware, loggerMiddleware } from './src/pm/middleware';
 import { sendMorningBriefing, handleMorningBriefing } from './src/commands/morningBrief';
+import { getCurrentScore, evaluateYesterday } from './src/analytics/scoreEvaluator';
+import { loadScoreState, manualAdjustScore, formatScoreMessage } from './src/analytics/score';
 import apiRoutes from './src/routes/api';
 import authRoutes from './src/routes/auth';
 import healthDataRoutes from './src/routes/healthData';
@@ -211,6 +213,39 @@ bot.command('improve', async (ctx: BotContext) => {
     }
 });
 
+// /score - Show current productivity score (optionally refresh)
+bot.command('score', async (ctx: BotContext) => {
+    try {
+        await ctx.replyWithChatAction('typing');
+        const args = (ctx.message as any)?.text?.split(' ').slice(1) ?? [];
+        const shouldEvaluate = args.includes('--refresh') || args.includes('-r');
+        const { message } = await getCurrentScore(shouldEvaluate);
+        await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('score command error:', err);
+        await ctx.reply('❌ Failed to fetch score.');
+    }
+});
+
+// /score adjust <delta> <reason> - Manual score adjustment (admin use)
+bot.command('score_adjust', async (ctx: BotContext) => {
+    try {
+        const parts = (ctx.message as any)?.text?.split(' ').slice(1) ?? [];
+        const delta = parseInt(parts[0], 10);
+        const reason = parts.slice(1).join(' ') || 'Manual adjustment';
+        if (isNaN(delta)) {
+            await ctx.reply('Usage: /score_adjust <delta> <reason>\nExample: /score_adjust +10 Had a great deep work session');
+            return;
+        }
+        const entry = await manualAdjustScore(delta, reason);
+        const state = await loadScoreState();
+        await ctx.reply(formatScoreMessage(state, entry), { parse_mode: 'Markdown' });
+    } catch (err) {
+        console.error('score_adjust error:', err);
+        await ctx.reply('❌ Failed to adjust score.');
+    }
+});
+
 // Callbacks
 bot.action(/^pm:open:(.+)$/, handleCallbackOpen);
 bot.action(/^pm:req:(.+):(.+)$/, handleCallbackRequest);
@@ -327,7 +362,9 @@ bot.telegram.setMyCommands([
     { command: 'strategy', description: '🧠 Strategic "State of the Union"' },
     { command: 'improve', description: '✨ AI Advice on what to fix next' },
     { command: 'task', description: '🔎 Search or view tasks' },
-    { command: 'notion_health', description: '🏥 Workspace health check' }
+    { command: 'notion_health', description: '🏥 Workspace health check' },
+    { command: 'score', description: '📊 Productivity score (add -r to refresh)' },
+    { command: 'score_adjust', description: '🔧 Manually adjust score' }
 ]).then(() => {
     console.log('✅ Telegram command menu updated');
 }).catch(err => {
@@ -372,9 +409,27 @@ setInterval(async () => {
         // Fire between 04:00 and 04:01 UTC (07:00 MSK)
         if (hour === 4 && minute === 0) {
             console.log('☀️ Sending scheduled morning briefing...');
+            // Evaluate yesterday before sending briefing (so score is up to date)
+            await evaluateYesterday().catch(err => console.error('Score eval error:', err));
             await sendMorningBriefing(bot);
         }
     } catch (err) {
         console.error('❌ Morning briefing scheduler error:', err);
+        return;
+    }
+
+    // End-of-day score snapshot at 20:00 UTC (23:00 MSK)
+    try {
+        const now2 = Temporal.Now.zonedDateTimeISO('UTC');
+        if (now2.hour === 20 && now2.minute === 0) {
+            console.log('📊 Running end-of-day score evaluation...');
+            const { state: scoreState, latestEntry, message: scoreMsg } = await getCurrentScore(true);
+            const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+            if (CHAT_ID && latestEntry && latestEntry.delta !== 0) {
+                await bot.telegram.sendMessage(CHAT_ID, scoreMsg, { parse_mode: 'Markdown' });
+            }
+        }
+    } catch (err) {
+        console.error('❌ End-of-day score error:', err);
     }
 }, 60 * 1000); // Check every minute
