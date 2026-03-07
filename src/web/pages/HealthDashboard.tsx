@@ -90,7 +90,7 @@ const RANGE_OPTIONS: RangeOption[] = [
 
 // All metric names we need to fetch
 const ALL_METRICS = [
-    'apple_exercise_time', 'apple_stand_hour', 'basal_energy_burned',
+    'apple_exercise_time', 'apple_stand_hour', 'active_energy', 'basal_energy_burned',
     'flights_climbed', 'step_count',
     'body_fat_percentage', 'body_mass_index', 'weight_body_mass',
     'sleep_analysis',
@@ -120,17 +120,155 @@ function kJtoKcal(kj: number): number {
     return kj / 4.184;
 }
 
+function toDateKey(raw: string): string {
+    return raw.split(' ')[0];
+}
+
+function buildYearDays(year: number): string[] {
+    const days: string[] = [];
+    const d = new Date(year, 0, 1);
+    while (d.getFullYear() === year) {
+        days.push(fmt(d));
+        d.setDate(d.getDate() + 1);
+    }
+    return days;
+}
+
+function aggregateMetricByDay(metric: MetricData | undefined): Map<string, number> {
+    const map = new Map<string, number>();
+    if (!metric) return map;
+    for (const row of metric.data) {
+        const date = typeof row.date === 'string' ? toDateKey(row.date) : String(row.date ?? '');
+        if (!date) continue;
+        const qty = typeof row.qty === 'number' ? row.qty : 0;
+        map.set(date, (map.get(date) || 0) + qty);
+    }
+    return map;
+}
+
+interface HeatmapCalendar {
+    weeks: number;
+    cells: Array<{ date: string | null }>;
+    monthMarkers: Array<{ label: string; column: number }>;
+}
+
+function dayOfYear(date: Date): number {
+    const start = new Date(date.getFullYear(), 0, 1);
+    const diff = date.getTime() - start.getTime();
+    return Math.floor(diff / (24 * 60 * 60 * 1000));
+}
+
+function buildHeatmapCalendar(year: number): HeatmapCalendar {
+    const jan1 = new Date(year, 0, 1);
+    const dec31 = new Date(year, 11, 31);
+    const totalDays = dayOfYear(dec31) + 1;
+
+    // Monday=0 ... Sunday=6
+    const startOffset = (jan1.getDay() + 6) % 7;
+    const totalCells = Math.ceil((startOffset + totalDays) / 7) * 7;
+    const weeks = totalCells / 7;
+
+    const cells: Array<{ date: string | null }> = Array.from({ length: totalCells }, () => ({ date: null }));
+    for (let i = 0; i < totalDays; i++) {
+        const d = new Date(year, 0, 1 + i);
+        cells[startOffset + i] = { date: fmt(d) };
+    }
+
+    const monthMarkers: Array<{ label: string; column: number }> = [];
+    for (let m = 0; m < 12; m++) {
+        const d = new Date(year, m, 1);
+        const idx = startOffset + dayOfYear(d);
+        const column = Math.floor(idx / 7) + 1;
+        const label = d.toLocaleDateString(undefined, { month: 'short' });
+        monthMarkers.push({ label, column });
+    }
+
+    return { weeks, cells, monthMarkers };
+}
+
+function GoalHeatmap({
+    title,
+    year,
+    values,
+    goal,
+    color,
+    unit,
+}: {
+    title: string;
+    year: number;
+    values: Map<string, number>;
+    goal: number;
+    color: string;
+    unit: string;
+}) {
+    const calendar = useMemo(() => buildHeatmapCalendar(year), [year]);
+    const reached = calendar.cells.filter(c => c.date && (values.get(c.date) || 0) >= goal).length;
+
+    return (
+        <section className="goal-grid-card" aria-label={`${title} progress`}>
+            <header className="goal-grid-header">
+                <h3>{title}</h3>
+                <p>{reached}/{calendar.cells.filter(c => c.date).length} days hit goal ({goal} {unit})</p>
+            </header>
+
+            <div className="goal-grid-months" aria-hidden="true" style={{ gridTemplateColumns: `repeat(${calendar.weeks}, minmax(0, 1fr))` }}>
+                {calendar.monthMarkers.map(m => (
+                    <span key={`${title}-${m.label}-${m.column}`} className="goal-grid-month-label" style={{ gridColumnStart: m.column }}>{m.label}</span>
+                ))}
+            </div>
+
+            <ol className="goal-grid" role="list" style={{ gridTemplateColumns: `repeat(${calendar.weeks}, minmax(0, 1fr))` }}>
+                {calendar.cells.map((cell, idx) => {
+                    if (!cell.date) {
+                        return <li key={`${title}-empty-${idx}`} className="goal-grid-cell is-empty" aria-hidden="true" />;
+                    }
+
+                    const value = values.get(cell.date) || 0;
+                    const pct = goal > 0 ? (value / goal) * 100 : 0;
+                    let level = 0;
+                    if (value > 0 && pct < 50) level = 1;
+                    else if (pct >= 50 && pct < 100) level = 2;
+                    else if (pct >= 100) level = 3;
+
+                    const alphaByLevel = [0.06, 0.28, 0.55, 0.95];
+                    const alpha = alphaByLevel[level];
+                    const tooltip = `${cell.date}: ${value.toFixed(0)} ${unit} (${pct.toFixed(0)}% of goal)`;
+
+                    return (
+                        <li key={`${title}-${cell.date}`} className="goal-grid-cell">
+                            <time
+                                dateTime={cell.date}
+                                className="goal-grid-day"
+                                style={{ backgroundColor: `color-mix(in srgb, ${color} ${Math.round(alpha * 100)}%, #0f0f12)` }}
+                                aria-label={`${cell.date}: ${value.toFixed(0)} ${unit}${value >= goal ? ', goal reached' : ''}`}
+                            />
+                            <span className="goal-grid-tooltip" role="tooltip">{tooltip}</span>
+                        </li>
+                    );
+                })}
+            </ol>
+        </section>
+    );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function HealthDashboard() {
     const [range, setRange] = useState<RangeKey>('this_month');
+    const [year, setYear] = useState<number>(new Date().getFullYear());
     const [data, setData] = useState<MetricsResponse | null>(null);
+    const [yearData, setYearData] = useState<MetricsResponse | null>(null);
     const [loading, setLoading] = useState(true);
 
     const currentRange = useMemo(() => {
+        if (range === 'ytd') {
+            const now = new Date();
+            const to = year === now.getFullYear() ? fmt(now) : `${year}-12-31`;
+            return { from: `${year}-01-01`, to };
+        }
         const opt = RANGE_OPTIONS.find(o => o.key === range)!;
         return opt.getRange();
-    }, [range]);
+    }, [range, year]);
 
     useEffect(() => {
         setLoading(true);
@@ -139,7 +277,22 @@ export default function HealthDashboard() {
             .catch(() => setLoading(false));
     }, [currentRange.from, currentRange.to]);
 
+    useEffect(() => {
+        const from = `${year}-01-01`;
+        const to = `${year}-12-31`;
+        api.healthMetrics(ALL_METRICS, from, to)
+            .then(setYearData)
+            .catch(() => setYearData(null));
+    }, [year]);
+
     const metrics = data?.metrics ?? [];
+    const yearMetrics = yearData?.metrics ?? [];
+    const yearlyData = useMemo(() => ({
+        activity: aggregateMetricByDay(findMetric(yearMetrics, 'apple_exercise_time')),
+        calories: aggregateMetricByDay(findMetric(yearMetrics, 'active_energy')),
+        standing: aggregateMetricByDay(findMetric(yearMetrics, 'apple_stand_hour')),
+        steps: aggregateMetricByDay(findMetric(yearMetrics, 'step_count')),
+    }), [yearMetrics]);
 
     // ─── Stats ───────────────────────────────────────────────────────────────
     const exerciseTime = findMetric(metrics, 'apple_exercise_time');
@@ -174,12 +327,58 @@ export default function HealthDashboard() {
                             {opt.label}
                         </button>
                     ))}
+                    <div className="hd-year-toggle" role="group" aria-label="Select year">
+                        <button className="hd-range-pill" onClick={() => setYear(y => y - 1)}>&larr;</button>
+                        <span>{year}</span>
+                        <button className="hd-range-pill" onClick={() => setYear(y => Math.min(new Date().getFullYear(), y + 1))}>&rarr;</button>
+                    </div>
                 </div>
 
                 {loading ? (
                     <div className="loading-state"><span className="spinner" /> Loading health data…</div>
                 ) : (
                     <>
+                        <section className="section fade-in stagger-1">
+                            <div className="section-title">🎯 Daily Goal Completion</div>
+                            <p style={{ color: 'var(--text-secondary)', fontSize: 12, marginBottom: 12 }}>
+                                GitHub-style yearly activity grids for your ring goals.
+                            </p>
+                            <div className="goal-grid-stack">
+                                <GoalHeatmap
+                                    title="Daily Activity"
+                                    year={year}
+                                    values={yearlyData.activity}
+                                    goal={30}
+                                    unit="min"
+                                    color="#32D74B"
+                                />
+                                <GoalHeatmap
+                                    title="Daily Calories Burned"
+                                    year={year}
+                                    values={yearlyData.calories}
+                                    goal={500}
+                                    unit="kcal"
+                                    color="#FF453A"
+                                />
+                                <GoalHeatmap
+                                    title="Daily Standing Hours"
+                                    year={year}
+                                    values={yearlyData.standing}
+                                    goal={12}
+                                    unit="hrs"
+                                    color="#00C7BE"
+                                />
+                                <GoalHeatmap
+                                    title="Daily Steps"
+                                    year={year}
+                                    values={yearlyData.steps}
+                                    goal={10000}
+                                    unit="steps"
+                                    color="#0A84FF"
+                                />
+                            </div>
+                        </section>
+
                         {/* ─── Stats ──────────────────────────────────────────── */}
                         <div className="section fade-in stagger-1">
                             <div className="section-title">🏃 Activity</div>

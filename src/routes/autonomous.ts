@@ -2,11 +2,8 @@ import { Router, Request, Response } from 'express';
 import { 
     queryDatabaseFiltered, 
     getTitle, 
-    getStatus, 
-    getCheckbox, 
-    getNumber, updatePage, 
-    NotionPage, 
-    isActiveProject,
+    getNumber, 
+    updatePage,
     getSelect
 } from '../notion/client';
 
@@ -15,29 +12,18 @@ const router = Router();
 const NOTION_TASKS_DB = process.env.NOTION_TASKS_DB!;
 const NOTION_PROJECTS_DB = process.env.NOTION_PROJECTS_DB!;
 
-interface AutonomousTask {
-    id: string;
-    title: string;
-    sequence: number;
-    projectId: string;
-    projectTitle: string;
-    repoPath: string | null;
-    outcome: string | null;
-    dod: string | null;
-}
-
 /**
  * GET /api/autonomous/queue
- * Returns a correctly ordered list of tasks across all autonomous projects
- * that are ready for pickup.
+ * Returns a correctly ordered list of tasks across all autonomous projects.
+ * Logic: Fetch projects with Autonomous=true and Status != Done.
+ * Then fetch tasks for those projects with Autonomous Pickup=true and Status=Not Started.
  */
 router.get('/queue', async (_req: Request, res: Response) => {
     try {
-        // 1. Fetch all autonomous projects that are ACTIVE
         const projects = await queryDatabaseFiltered(NOTION_PROJECTS_DB, {
             and: [
                 { property: 'Autonomous', checkbox: { equals: true } },
-                { property: 'Status', status: { equals: 'In progress' } }
+                { property: 'Status', status: { does_not_equal: 'Done' } }
             ]
         });
 
@@ -47,15 +33,15 @@ router.get('/queue', async (_req: Request, res: Response) => {
 
         const projectMap = new Map<string, { title: string, repo: string | null }>();
         projects.forEach(p => {
-            // Get repo path from Project URL or a dedicated 'Repo Path' field if it exists
-            const repo = getSelect(p, 'Repo Path') || (p.properties['Project URL'] as any)?.url || null;
+            const github = (p.properties['GitHub'] as any)?.url;
+            const staging = (p.properties['Staging URL'] as any)?.url;
+            const repo = getSelect(p, 'Repo Path') || github || staging || null;
             projectMap.set(p.id, {
                 title: getTitle(p),
                 repo: repo
             });
         });
 
-        // 2. Fetch all tasks for these projects that have 'Autonomous Pickup' enabled and are 'Not Started'
         const tasks = await queryDatabaseFiltered(NOTION_TASKS_DB, {
             and: [
                 { property: 'Autonomous Pickup', checkbox: { equals: true } },
@@ -71,10 +57,10 @@ router.get('/queue', async (_req: Request, res: Response) => {
             { property: 'Sequence', direction: 'ascending' }
         ]);
 
-        const queue: AutonomousTask[] = tasks.map(t => {
-            const projId = (t.properties['Project'] as any)?.relation?.[0]?.id;
-            const proj = projectMap.get(projId);
-            
+        const queue = tasks.map(t => {
+            const projRel = t.properties['Project'] as any;
+            const projId = projRel?.relation?.[0]?.id;
+            const proj = projId ? projectMap.get(projId) : null;
             return {
                 id: t.id,
                 title: getTitle(t),
@@ -94,28 +80,18 @@ router.get('/queue', async (_req: Request, res: Response) => {
     }
 });
 
-export default router;
-
 /**
  * PATCH /api/autonomous/tasks/:id/status
- * Helper for the runner to update task status during execution.
+ * Generic helper for any runner to update Notion state.
  */
 router.patch('/tasks/:id/status', async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { status, outcome, blockedReason } = req.body;
-        
         const props: any = {};
-        if (status) {
-            props['Status'] = { status: { name: status } };
-        }
-        if (outcome) {
-            props['Outcome'] = { rich_text: [{ text: { content: outcome } }] };
-        }
-        if (blockedReason) {
-            props['Blocked Reason'] = { rich_text: [{ text: { content: blockedReason } }] };
-        }
-
+        if (status) props['Status'] = { status: { name: status } };
+        if (outcome) props['Outcome'] = { rich_text: [{ text: { content: outcome } }] };
+        if (blockedReason) props['Blocked Reason'] = { rich_text: [{ text: { content: blockedReason } }] };
         await updatePage(id as string, props);
         res.json({ ok: true });
     } catch (error) {
@@ -126,25 +102,10 @@ router.patch('/tasks/:id/status', async (req: Request, res: Response) => {
 
 /**
  * POST /api/autonomous/trigger
- * Manual trigger for the heartbeat logic.
+ * NO-OP: Deprecated. The team handles execution now.
  */
 router.post('/trigger', async (_req: Request, res: Response) => {
-    // This is a bridge to the runner logic
-    res.json({ ok: true, message: 'Autonomous engine tick triggered' });
-    
-    // Lazy import and run to avoid circular deps during scaffold
-    const { runAutonomousTask } = require('../pm/runner');
-    
-    try {
-        const queueRes = await fetch(`${process.env.PM_API_INTERNAL_URL || 'http://localhost:3301'}/api/autonomous/queue`, {
-            headers: { 'X-API-Key': process.env.API_KEY! }
-        });
-        const { tasks } = await queueRes.json();
-        
-        if (tasks && tasks.length > 0) {
-            await runAutonomousTask(tasks[0]);
-        }
-    } catch (e) {
-        console.error('Trigger error:', e);
-    }
+    res.json({ ok: true, message: 'Trigger logic removed. External agents should poll /queue.' });
 });
+
+export default router;

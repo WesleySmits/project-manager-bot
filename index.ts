@@ -208,13 +208,16 @@ app.use('/api/auth', authRoutes);
 
 // API key + JWT: either scheme authenticates the request
 app.use(apiKeyAuthMiddleware);
+
+// API routes that SHOULD NOT be protected by JWT middleware
+app.use('/api/autonomous', autonomousRoutes);
+
 app.use(jwtAuthMiddleware);
 
 // API routes (protected by the middleware stack above)
 app.use('/api', apiRoutes);
 app.use('/api/health-data', healthDataRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/autonomous', autonomousRoutes);
 
 // Morning briefing endpoint — requires API key or JWT
 app.post('/morning-brief', requireAuth, async (_req, res) => {
@@ -232,8 +235,16 @@ app.post('/morning-brief', requireAuth, async (_req, res) => {
 const webDistPath = path.join(__dirname, 'web');
 app.use(express.static(webDistPath));
 
-// SPA fallback - serve index.html for all non-API routes
-app.get('{*path}', (_req, res) => {
+// SPA fallback - serve index.html for app routes only.
+// Important: if a request looks like a static asset (has a file extension),
+// return 404 so browsers don't get HTML for missing JS/CSS files.
+app.get('{*path}', (req, res) => {
+    const reqPath = req.path || '';
+    if (reqPath.includes('.')) {
+        res.status(404).end();
+        return;
+    }
+
     const indexPath = path.join(webDistPath, 'index.html');
     res.sendFile(indexPath, (err) => {
         if (err) {
@@ -296,4 +307,3 @@ setInterval(async () => {
         console.error('❌ Daily analytics scheduler failed:', err);
     }
 }, 60 * 60 * 1000); // Check every hour
-

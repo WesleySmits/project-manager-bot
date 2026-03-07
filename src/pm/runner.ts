@@ -20,28 +20,40 @@ export async function runAutonomousTask(task: any) {
     };
 
     console.log(`[Runner] Starting task: ${title}`);
-    
+
     try {
         // 1. Claim Task
         await updateStatus('In Progress');
 
         // 2. Sync Repo
-        if (!repoPath || !fs.existsSync(repoPath)) {
-            throw new Error(`Repo path invalid or missing: ${repoPath}`);
+        if (!repoPath) {
+            throw new Error(`Repo path is missing for task: ${title}. Please set a valid 'Repo Path' in Notion.`);
         }
-        
+
+        if (repoPath.startsWith('http')) {
+            throw new Error(`Repo path is an HTTP URL (${repoPath}). Please configure an absolute local path (e.g., /opt/projects/vps-scripts) in the Notion 'Repo Path' field.`);
+        }
+
+        if (!fs.existsSync(repoPath)) {
+            throw new Error(`Local path does not exist: ${repoPath}`);
+        }
+
         process.chdir(repoPath);
         console.log(`[Runner] Working in ${repoPath}`);
 
-        // Ensure clean state
-        execSync('git fetch origin main');
-        execSync('git checkout main');
-        execSync('git pull origin main --ff-only');
+        // Ensure clean state (only if git repo)
+        if (fs.existsSync('.git')) {
+            execSync('git fetch origin main');
+            execSync('git checkout main');
+            execSync('git pull origin main --ff-only');
+        } else {
+            console.log('[Runner] No .git — skipping sync');
+        }
 
         // 3. Execute Work (Placeholder for Agent Logic Integration)
         // In a real run, this is where the agent Turn/Subagent logic would be called.
         // For the scaffold, we ensure the environment is ready.
-        
+
         // 4. Preflight Checks
         console.log('[Runner] Running preflight (lint + test)...');
         try {
@@ -66,7 +78,7 @@ export async function runAutonomousTask(task: any) {
 
         // 6. Deployment / Finalize
         // TODO: Integrate Dokploy deployment polling
-        
+
         await updateStatus('Completed', `Task successfully executed and pushed to main.`);
         console.log(`[Runner] Task completed: ${title}`);
 
