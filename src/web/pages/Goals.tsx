@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { api, GoalItem } from '../client';
 
+function categoryBadge(category: GoalItem['category']) {
+    const cls = category === 'Uncategorized' ? 'none' : 'status-active';
+    return <span className={`badge ${cls}`}>{category}</span>;
+}
+
 export default function Goals() {
     const [goals, setGoals] = useState<GoalItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -25,7 +30,10 @@ export default function Goals() {
                             rel="noreferrer"
                             className={`goal-card fade-in stagger-${Math.min(i + 1, 5)}`}
                         >
-                            <div className="goal-title">{g.title}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                                <div className="goal-title">{g.title}</div>
+                                {categoryBadge(g.category)}
+                            </div>
                             <div className="progress-bar">
                                 <div className="progress-fill" style={{ width: `${g.progress}%` }} />
                             </div>

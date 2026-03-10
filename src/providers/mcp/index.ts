@@ -77,7 +77,8 @@ export class McpProvider implements TodoProvider {
 
     async fetchGoals(): Promise<Goal[]> {
         try {
-            return (await this.callTool({ tool: 'list_goals' })) as Goal[];
+            const goals = (await this.callTool({ tool: 'list_goals' })) as Goal[];
+            return goals.map(goal => ({ ...goal, category: goal.category ?? 'Uncategorized' }));
         } catch {
             return []; // Goals are optional in MCP providers
         }

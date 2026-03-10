@@ -40,6 +40,12 @@ export interface Task {
     url: string;
     /** Whether the task is considered complete (derived from status) */
     completed: boolean;
+    /** Planning OS: why this task should be done now */
+    whyNow?: string | null;
+    /** Planning OS: smallest concrete next step (<=30 minutes) */
+    nextAction?: string | null;
+    /** Optional effort estimate in minutes */
+    effortMinutes?: number | null;
     /** Raw provider-specific metadata (read-only, do not write back) */
     raw?: Record<string, unknown>;
 }
@@ -70,11 +76,14 @@ export interface Project {
 }
 
 /** A normalized goal */
+export type GoalCategory = 'Personal' | 'Professional' | 'Health' | 'Wealth' | 'Uncategorized';
+
 export interface Goal {
     id: string;
     title: string;
     description: string | null;
     completed: boolean;
+    category: GoalCategory;
     url: string;
     raw?: Record<string, unknown>;
 }

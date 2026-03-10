@@ -12,77 +12,51 @@ interface ScoredTask {
     status: string | undefined;
     dueDate: string | null;
     scheduledDate: string | null;
+    projectId: string | null;
     hasProject: boolean;
+    whyNow: string | null;
+    nextAction: string | null;
     score: number;
 }
 
-/**
- * Score a task based on urgency
- * Higher score = more urgent/important
- */
 export function scoreTask(task: Task): number {
     const today = Temporal.Now.plainDateISO();
 
-    // Due date score (40% weight)
     let dueScore = 0;
     const dueDate = task.dueDate;
     if (dueDate) {
         const daysUntilDue = Temporal.PlainDate.from(dueDate).since(today).days;
-        if (daysUntilDue < 0) {
-            dueScore = 1.0;
-        } else if (daysUntilDue === 0) {
-            dueScore = 0.95;
-        } else if (daysUntilDue <= 2) {
-            dueScore = 0.8;
-        } else if (daysUntilDue <= 7) {
-            dueScore = 0.5;
-        } else {
-            dueScore = Math.max(0, 0.3 - (daysUntilDue - 7) * 0.01);
-        }
+        if (daysUntilDue < 0) dueScore = 1.0;
+        else if (daysUntilDue === 0) dueScore = 0.95;
+        else if (daysUntilDue <= 2) dueScore = 0.8;
+        else if (daysUntilDue <= 7) dueScore = 0.5;
+        else dueScore = Math.max(0, 0.3 - (daysUntilDue - 7) * 0.01);
     }
 
-    // Scheduled date score (30% weight)
     let scheduledScore = 0;
     const scheduledDate = task.scheduledDate;
     if (scheduledDate) {
         const daysUntilScheduled = Temporal.PlainDate.from(scheduledDate).since(today).days;
-        if (daysUntilScheduled < 0) {
-            scheduledScore = 1.0;
-        } else if (daysUntilScheduled === 0) {
-            scheduledScore = 0.95;
-        } else if (daysUntilScheduled === 1) {
-            scheduledScore = 0.7;
-        } else if (daysUntilScheduled <= 3) {
-            scheduledScore = 0.4;
-        }
+        if (daysUntilScheduled < 0) scheduledScore = 1.0;
+        else if (daysUntilScheduled === 0) scheduledScore = 0.95;
+        else if (daysUntilScheduled === 1) scheduledScore = 0.7;
+        else if (daysUntilScheduled <= 3) scheduledScore = 0.4;
     }
 
-    // Priority score (25% weight)
     let priorityScore = 0;
     const priority = (task.priority ?? '').toLowerCase();
-    if (priority.includes('high') || priority.includes('p1') || priority.includes('urgent')) {
-        priorityScore = 1.0;
-    } else if (priority.includes('medium') || priority.includes('p2')) {
-        priorityScore = 0.6;
-    } else if (priority.includes('low') || priority.includes('p3') || priority.includes('p4')) {
-        priorityScore = 0.2;
-    }
+    if (priority.includes('high') || priority.includes('p1') || priority.includes('urgent')) priorityScore = 1.0;
+    else if (priority.includes('medium') || priority.includes('p2')) priorityScore = 0.6;
+    else if (priority.includes('low') || priority.includes('p3') || priority.includes('p4')) priorityScore = 0.2;
 
-    // Status score (5% weight) - In Progress tasks get a boost
     let statusScore = 0;
     const status = (task.status ?? '').toLowerCase();
-    if (status.includes('in progress') || status.includes('doing') || status.includes('active')) {
-        statusScore = 1.0;
-    } else if (status.includes('todo') || status.includes('to do') || status.includes('not started')) {
-        statusScore = 0.5;
-    }
+    if (status.includes('in progress') || status.includes('doing') || status.includes('active')) statusScore = 1.0;
+    else if (status.includes('todo') || status.includes('to do') || status.includes('not started')) statusScore = 0.5;
 
     return (0.40 * dueScore) + (0.30 * scheduledScore) + (0.25 * priorityScore) + (0.05 * statusScore);
 }
 
-/**
- * Get priority emoji
- */
 function getPriorityEmoji(priority: string | null | undefined): string {
     if (!priority) return '⚪';
     const p = priority.toLowerCase();
@@ -92,22 +66,14 @@ function getPriorityEmoji(priority: string | null | undefined): string {
     return '⚪';
 }
 
-/**
- * Format date for display
- */
 function formatDate(date: string | null): string | null {
     if (!date) return null;
     return Temporal.PlainDate.from(date).toLocaleString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-/**
- * Get top tasks for today
- */
 export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
     const provider = getProvider();
     const allTasks = await provider.fetchTasks();
-
-    // fetchTasks() should already exclude completed tasks, but guard anyway
     const activeTasks = allTasks.filter(t => !t.completed);
 
     const scoredTasks: ScoredTask[] = activeTasks.map(t => ({
@@ -117,7 +83,10 @@ export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
         status: t.status ?? undefined,
         dueDate: t.dueDate,
         scheduledDate: t.scheduledDate,
+        projectId: t.projectId,
         hasProject: t.projectId !== null,
+        whyNow: t.whyNow ?? null,
+        nextAction: t.nextAction ?? null,
         score: scoreTask(t),
     }));
 
@@ -125,9 +94,6 @@ export async function getTodayTasks(limit: number = 5): Promise<ScoredTask[]> {
     return scoredTasks.slice(0, limit);
 }
 
-/**
- * Generate dynamic summary of why these tasks matter
- */
 function generateTaskSummary(tasks: ScoredTask[]): string {
     const today = Temporal.Now.plainDateISO();
     const lines: string[] = [];
@@ -162,16 +128,27 @@ function generateTaskSummary(tasks: ScoredTask[]): string {
     return lines.join('\n');
 }
 
-/**
- * Format tasks as text message
- */
+function deriveWhyNow(task: ScoredTask): string {
+    if (task.whyNow && task.whyNow.trim().length > 0) return task.whyNow;
+    if (task.dueDate) return `Due on ${task.dueDate} — prevents spillover.`;
+    if (task.priority && /high|urgent|p1/i.test(task.priority)) return 'High-priority item with immediate leverage.';
+    if (task.scheduledDate) return `Scheduled for ${task.scheduledDate} — keeps execution cadence.`;
+    return 'Builds momentum and reduces cognitive load.';
+}
+
+function deriveNextAction(task: ScoredTask): string {
+    if (task.nextAction && task.nextAction.trim().length > 0) return task.nextAction;
+    return `25 minutes: complete the smallest shippable step for "${task.title}".`;
+}
+
 export function formatTodayTasks(tasks: ScoredTask[]): string {
     if (tasks.length === 0) return '✅ No urgent tasks! You\'re all caught up.';
 
-    const lines = ['📋 *Your top tasks for today:*', ''];
+    const top = tasks.slice(0, 3);
+    const lines = ['📋 *Top 1 → Top 1 → Top 3*', ''];
     const today = Temporal.Now.plainDateISO();
 
-    tasks.forEach((task, i) => {
+    top.forEach((task, i) => {
         const emoji = getPriorityEmoji(task.priority);
         let dateInfo = '';
 
@@ -193,8 +170,10 @@ export function formatTodayTasks(tasks: ScoredTask[]): string {
 
         lines.push(`${i + 1}. ${emoji} *${task.title}*`);
         if (dateInfo) lines.push(`   ${dateInfo}`);
+        lines.push(`   _Why now:_ ${deriveWhyNow(task)}`);
+        lines.push(`   _Next action:_ ${deriveNextAction(task)}`);
     });
 
-    lines.push(generateTaskSummary(tasks));
+    lines.push(generateTaskSummary(top));
     return lines.join('\n');
 }

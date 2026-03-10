@@ -39,6 +39,26 @@ import type {
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
 
+
+function getRichTextByNames(page: NotionPage, names: string[]): string | null {
+    const props = page.properties ?? {};
+    for (const name of names) {
+        const direct = props[name] as any;
+        if (direct?.type === 'rich_text' && direct.rich_text?.length) {
+            const value = direct.rich_text.map((r: any) => r.plain_text).join('').trim();
+            if (value) return value;
+        }
+        const key = Object.keys(props).find(k => k.toLowerCase() === name.toLowerCase());
+        const alt = key ? (props[key] as any) : null;
+        if (alt?.type === 'rich_text' && alt.rich_text?.length) {
+            const value = alt.rich_text.map((r: any) => r.plain_text).join('').trim();
+            if (value) return value;
+        }
+    }
+    return null;
+}
+
+
 function mapTask(page: NotionPage): Task {
     const shortIdProp = page.properties?.['Task ID'] as any;
     const shortId: number | null =
@@ -47,6 +67,9 @@ function mapTask(page: NotionPage): Task {
             : null;
 
     const projectRelation = getRelationIds(page, 'Project');
+
+    const whyNow = getRichTextByNames(page, ['Why Now', 'Why now', 'Why']);
+    const nextAction = getRichTextByNames(page, ['Next Action', 'Next action', 'Next Step', 'Next step']);
 
     return {
         id: page.id,
@@ -60,6 +83,9 @@ function mapTask(page: NotionPage): Task {
         projectId: projectRelation[0] ?? null,
         url: page.url,
         completed: isCompleted(page),
+        whyNow,
+        nextAction,
+        effortMinutes: getNumber(page, 'Effort Minutes') ?? getNumber(page, 'Effort (min)'),
         raw: page.properties as unknown as Record<string, unknown>,
     };
 }
@@ -81,14 +107,32 @@ function mapProject(page: NotionPage): Project {
 }
 
 function mapGoal(page: NotionPage): Goal {
+    const category =
+        getSelect(page, 'Category') ??
+        getSelect(page, 'Goal Category') ??
+        getSelect(page, 'Domain') ??
+        getSelect(page, 'Type');
+
     return {
         id: page.id,
         title: getTitle(page),
         description: getDescription(page),
         completed: isCompleted(page),
+        category: normalizeGoalCategory(category),
         url: page.url,
         raw: page.properties as unknown as Record<string, unknown>,
     };
+}
+
+
+function normalizeGoalCategory(raw: string | null): Goal['category'] {
+    const value = (raw ?? '').trim().toLowerCase();
+    if (!value) return 'Uncategorized';
+    if (value.includes('health')) return 'Health';
+    if (value.includes('wealth') || value.includes('finance')) return 'Wealth';
+    if (value.includes('personal') || value.includes('life')) return 'Personal';
+    if (value.includes('professional') || value.includes('work') || value.includes('business')) return 'Professional';
+    return 'Uncategorized';
 }
 
 // ─── Provider ────────────────────────────────────────────────────────────────

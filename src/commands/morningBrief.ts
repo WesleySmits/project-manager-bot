@@ -38,13 +38,26 @@ async function getHealthIssues(): Promise<{ orphanedTasks: number; projectsWitho
 export async function generateMorningBriefing(): Promise<string> {
     const provider = getProvider();
 
-    const [tasks, healthData, goals] = await Promise.all([
+    const [tasks, healthData, goals, projects] = await Promise.all([
         getTodayTasks(3),
         getHealthIssues(),
         provider.fetchGoals(),
+        provider.fetchProjects(),
     ]);
 
     const lines: string[] = [];
+
+    const topTasks = tasks.slice(0, 3);
+    const topProject = (() => {
+        const withProject = topTasks.find(t => t.projectId);
+        if (!withProject?.projectId) return null;
+        return projects.find(p => p.id === withProject.projectId) ?? null;
+    })();
+
+    const topGoal = (() => {
+        if (!topProject || topProject.goalIds.length === 0) return null;
+        return goals.find(g => topProject.goalIds.includes(g.id)) ?? null;
+    })();
 
     // 1. HEADER
     lines.push('☀️ *Good morning!*');
@@ -66,18 +79,26 @@ export async function generateMorningBriefing(): Promise<string> {
     if (tasks.length === 0) {
         lines.push('✨ No urgent tasks today. Great time for deep work or strategic planning.');
     } else {
-        lines.push('🎯 *Top 3 Priorities:*');
-        tasks.forEach((task, i) => {
+        lines.push('🎯 *Top 1 → Top 1 → Top 3*');
+        lines.push(`*Top Goal:* ${topGoal ? topGoal.title : 'Not identified (link project to goal)'}`);
+        lines.push(`*Top Project:* ${topProject ? topProject.title : 'Not identified (link task to project)'}`);
+        lines.push('');
+
+        topTasks.forEach((task, i) => {
             const priority = task.priority || '';
             const emoji = priority.toLowerCase().includes('high') || priority.toLowerCase().includes('p1') ? '🔴' :
                 priority.toLowerCase().includes('medium') || priority.toLowerCase().includes('p2') ? '🟠' : '🟢';
+            const why = task.whyNow?.trim() ? task.whyNow : 'Moves your active plan forward and reduces decision debt.';
+            const next = task.nextAction?.trim() ? task.nextAction : `25 min sprint on the smallest shippable step of "${task.title}".`;
             lines.push(`${i + 1}. ${emoji} *${task.title}*`);
+            lines.push(`   _Why now:_ ${why}`);
+            lines.push(`   _Next action:_ ${next}`);
         });
         lines.push('');
 
         // 4. AI INSIGHTS
         const insights = await getTaskInsights(
-            tasks.map(t => ({ title: t.title, priority: t.priority })),
+            topTasks.map(t => ({ title: t.title, priority: t.priority })),
             goals.map(g => ({ title: g.title })),
         );
         lines.push('🧠 *Insight:*');

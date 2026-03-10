@@ -24,6 +24,9 @@ function serializeTask(t: Task) {
         scheduledDate: t.scheduledDate ?? null,
         hasProject: t.projectId !== null,
         completed: t.completed,
+        whyNow: t.whyNow ?? null,
+        nextAction: t.nextAction ?? null,
+        effortMinutes: t.effortMinutes ?? null,
         url: t.url,
     };
 }
@@ -47,6 +50,7 @@ function serializeGoal(g: Goal) {
         id: g.id,
         title: g.title,
         completed: g.completed,
+        category: g.category,
         description: g.description,
         url: g.url,
     };
@@ -441,5 +445,180 @@ router.get('/weekly-review', async (req: Request, res: Response) => {
         res.status(isClientError ? 400 : 500).json({ error: message });
     }
 });
+
+
+/** Planning OS compliance snapshot */
+router.get('/planning/os', async (_req: Request, res: Response) => {
+    try {
+        const provider = getProvider();
+        const [tasks, projects, goals] = await Promise.all([
+            provider.fetchTasks(),
+            provider.fetchProjects(),
+            provider.fetchGoals(),
+        ]);
+
+        const activeGoals = goals.filter(g => !g.completed);
+        const activeProjects = projects.filter(p => p.statusCategory === 'ACTIVE');
+        const activeTasks = tasks.filter(t => !t.completed);
+
+        const tasksByProject = new Map<string, number>();
+        for (const task of activeTasks) {
+            if (!task.projectId) continue;
+            tasksByProject.set(task.projectId, (tasksByProject.get(task.projectId) ?? 0) + 1);
+        }
+
+        const activeProjectsByGoal = new Map<string, number>();
+        const scheduledProjectsByGoal = new Map<string, number>();
+
+        for (const project of projects) {
+            for (const goalId of project.goalIds) {
+                if (project.statusCategory === 'ACTIVE') {
+                    activeProjectsByGoal.set(goalId, (activeProjectsByGoal.get(goalId) ?? 0) + 1);
+                }
+                if (project.statusCategory === 'READY' || project.statusCategory === 'BACKLOG') {
+                    scheduledProjectsByGoal.set(goalId, (scheduledProjectsByGoal.get(goalId) ?? 0) + 1);
+                }
+            }
+        }
+
+        const categoryCoverage = {
+            Personal: 0,
+            Professional: 0,
+            Health: 0,
+            Wealth: 0,
+            Uncategorized: 0,
+        } as Record<Goal['category'], number>;
+
+        for (const goal of activeGoals) {
+            const activeCount = activeProjectsByGoal.get(goal.id) ?? 0;
+            const scheduledCount = scheduledProjectsByGoal.get(goal.id) ?? 0;
+            if (activeCount > 0 || scheduledCount > 0) {
+                categoryCoverage[goal.category] += 1;
+            }
+        }
+
+        const violations: string[] = [];
+
+        if (activeGoals.length > 3) {
+            violations.push(`Active goals cap exceeded (${activeGoals.length}/3).`);
+        }
+
+        const overloadedGoals = activeGoals
+            .map(goal => ({
+                goal,
+                activeProjects: activeProjectsByGoal.get(goal.id) ?? 0,
+            }))
+            .filter(entry => entry.activeProjects > 2);
+
+        if (overloadedGoals.length > 0) {
+            violations.push(`${overloadedGoals.length} goals exceed max 2 active projects.`);
+        }
+
+        const overloadedProjects = activeProjects
+            .map(project => ({
+                id: project.id,
+                title: project.title,
+                activeTasks: tasksByProject.get(project.id) ?? 0,
+            }))
+            .filter(entry => entry.activeTasks > 5);
+
+        if (overloadedProjects.length > 0) {
+            violations.push(`${overloadedProjects.length} active projects exceed max 5 active tasks.`);
+        }
+
+        const goalsWithoutActiveProject = activeGoals.filter(goal => (activeProjectsByGoal.get(goal.id) ?? 0) === 0);
+        if (goalsWithoutActiveProject.length > 0) {
+            violations.push(`${goalsWithoutActiveProject.length} active goals have no active project.`);
+        }
+
+        const requiredCategories: Array<Exclude<Goal['category'], 'Uncategorized'>> = ['Personal', 'Professional', 'Health', 'Wealth'];
+        const missingCategories = requiredCategories.filter(cat => categoryCoverage[cat] === 0);
+        if (missingCategories.length > 0) {
+            violations.push(`Missing weekly category coverage: ${missingCategories.join(', ')}.`);
+        }
+
+        res.json({
+            summary: {
+                activeGoals: activeGoals.length,
+                activeProjects: activeProjects.length,
+                activeTasks: activeTasks.length,
+                violations: violations.length,
+            },
+            limits: {
+                activeGoalsMax: 3,
+                activeProjectsPerGoalMax: 2,
+                activeTasksPerProjectMax: 5,
+            },
+            categoryCoverage,
+            missingCategories,
+            overloadedGoals: overloadedGoals.map(({ goal, activeProjects }) => ({
+                id: goal.id,
+                title: goal.title,
+                category: goal.category,
+                activeProjects,
+                url: goal.url,
+            })),
+            overloadedProjects,
+            goalsWithoutActiveProject: goalsWithoutActiveProject.map(g => ({
+                id: g.id,
+                title: g.title,
+                category: g.category,
+                url: g.url,
+            })),
+            violations,
+        });
+    } catch (err) {
+        console.error('Planning OS API error:', err);
+        res.status(500).json({ error: 'Failed to load planning OS snapshot' });
+    }
+});
+
+
+
+/** Daily focus contract: Top Goal -> Top Project -> Top 3 Tasks */
+router.get('/planning/daily-focus', async (_req: Request, res: Response) => {
+    try {
+        const provider = getProvider();
+        const [tasks, projects, goals] = await Promise.all([
+            getTodayTasks(3),
+            provider.fetchProjects(),
+            provider.fetchGoals(),
+        ]);
+
+        const topTasks = tasks.slice(0, 3);
+        const topProject = (() => {
+            const withProject = topTasks.find(t => t.projectId);
+            if (!withProject?.projectId) return null;
+            return projects.find(p => p.id === withProject.projectId) ?? null;
+        })();
+
+        const topGoal = (() => {
+            if (!topProject || topProject.goalIds.length === 0) return null;
+            return goals.find(g => topProject.goalIds.includes(g.id)) ?? null;
+        })();
+
+        const normalizedTasks = topTasks.map((task, idx) => ({
+            rank: idx + 1,
+            id: task.id,
+            title: task.title,
+            priority: task.priority ?? null,
+            dueDate: task.dueDate ?? null,
+            scheduledDate: task.scheduledDate ?? null,
+            whyNow: task.whyNow?.trim() ? task.whyNow : 'Moves your active plan forward and reduces decision debt.',
+            nextAction: task.nextAction?.trim() ? task.nextAction : `25 min sprint on the smallest shippable step of "${task.title}".`,
+        }));
+
+        res.json({
+            topGoal: topGoal ? { id: topGoal.id, title: topGoal.title, category: topGoal.category, url: topGoal.url } : null,
+            topProject: topProject ? { id: topProject.id, title: topProject.title, url: topProject.url } : null,
+            topTasks: normalizedTasks,
+            format: 'Top 1 Goal -> Top 1 Project -> Top 3 Tasks',
+        });
+    } catch (err) {
+        console.error('Daily focus API error:', err);
+        res.status(500).json({ error: 'Failed to load daily focus' });
+    }
+});
+
 
 export default router;

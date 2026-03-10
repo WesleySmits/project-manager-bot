@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, DashboardData } from '../client';
+import { api, DashboardData, PlanningOsSnapshot } from '../client';
 
 function priorityClass(p: string | null): string {
     if (!p) return 'none';
@@ -14,9 +14,12 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [motivation, setMotivation] = useState<string | null>(null);
     const [motivationLoading, setMotivationLoading] = useState(false);
+    const [planning, setPlanning] = useState<PlanningOsSnapshot | null>(null);
 
     useEffect(() => {
-        api.dashboard().then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+        Promise.all([api.dashboard(), api.planningOs()])
+            .then(([d, p]) => { setData(d); setPlanning(p); setLoading(false); })
+            .catch(() => setLoading(false));
     }, []);
 
     const handleMotivation = () => {
@@ -29,6 +32,22 @@ export default function Dashboard() {
 
     const m = data.metrics;
     const impact = data.todayImpact;
+    const focusTasks = data.todayTasks.slice(0, 3);
+    const topGoal = impact?.goalsAffected?.[0] ?? null;
+    const topProject = impact?.projectsAffected?.[0] ?? null;
+
+    const deriveWhyNow = (task: { whyNow?: string | null; priority: string | null; dueDate: string | null; scheduledDate: string | null }) => {
+        if (task.whyNow && task.whyNow.trim().length > 0) return task.whyNow;
+        if (task.dueDate) return `Due on ${task.dueDate} — prevents deadline spillover.`;
+        if (task.priority && /high|urgent|p1/i.test(task.priority)) return 'High-priority item that protects current momentum.';
+        if (task.scheduledDate) return `Scheduled for ${task.scheduledDate} — keeps the weekly plan on track.`;
+        return 'Advances your currently active project and reduces decision debt.';
+    };
+
+    const deriveNextAction = (task: { nextAction?: string | null; title: string }) => {
+        if (task.nextAction && task.nextAction.trim().length > 0) return task.nextAction;
+        return `Spend 25 minutes on the smallest shippable step for: ${task.title}`;
+    };
 
     return (
         <>
@@ -54,6 +73,41 @@ export default function Dashboard() {
                         <div className={`metric-value ${m.healthIssues > 0 ? 'red' : 'green'}`}>{m.healthIssues}</div>
                     </div>
                 </div>
+
+
+                {/* Planning OS */}
+                {planning && (
+                    <div className="section fade-in stagger-1">
+                        <div className="section-title">🧭 Planning OS Compliance</div>
+                        <div className="card">
+                            <div className="card-body">
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                                    <span className={`badge ${planning.summary.violations > 0 ? 'high' : 'status-done'}`}>
+                                        Violations: {planning.summary.violations}
+                                    </span>
+                                    <span className="badge none">Goals {planning.summary.activeGoals}/{planning.limits.activeGoalsMax}</span>
+                                    <span className="badge none">Projects {planning.summary.activeProjects}</span>
+                                    <span className="badge none">Tasks {planning.summary.activeTasks}</span>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                                    Category coverage: Professional {planning.categoryCoverage.Professional} · Personal {planning.categoryCoverage.Personal} · Health {planning.categoryCoverage.Health} · Wealth {planning.categoryCoverage.Wealth}
+                                </div>
+                                {planning.violations.length === 0 ? (
+                                    <div className="empty-state" style={{ padding: '8px 0' }}>System is within WIP and balance rules.</div>
+                                ) : (
+                                    <div className="issue-list">
+                                        {planning.violations.map((v, i) => (
+                                            <div key={i} className="issue-item">
+                                                <span className="issue-dot red" />
+                                                <span>{v}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Today's Impact — what you're actually achieving */}
                 {impact && (impact.projectsAffected.length > 0 || impact.goalsAffected.length > 0) && (
@@ -97,6 +151,38 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
+
+
+                {/* Today Focus (Planning OS Contract) */}
+                <div className="section fade-in stagger-2">
+                    <div className="section-title">🎯 Today Focus (Top 1 → Top 1 → Top 3)</div>
+                    <div className="card">
+                        <div className="card-body">
+                            <div style={{ marginBottom: 12, display: 'grid', gap: 8 }}>
+                                <div><strong>Top Goal:</strong> {topGoal ? <a href={topGoal.url} target="_blank" rel="noreferrer">{topGoal.title}</a> : 'Not identified yet — link tasks to goal-backed projects.'}</div>
+                                <div><strong>Top Project:</strong> {topProject ? <a href={topProject.url} target="_blank" rel="noreferrer">{topProject.title}</a> : 'Not identified yet — ensure active tasks are tied to a project.'}</div>
+                            </div>
+                            {focusTasks.length === 0 ? (
+                                <div className="empty-state">No priority tasks found for today.</div>
+                            ) : (
+                                <div className="issue-list">
+                                    {focusTasks.map((task, i) => (
+                                        <a key={task.id} href={task.url} target="_blank" rel="noreferrer" className="issue-item" style={{ display: 'block', textDecoration: 'none' }}>
+                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                                                <span className="badge status-active">T{i + 1}</span>
+                                                <span style={{ color: 'var(--text-primary)' }}>{task.title}</span>
+                                            </div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 4 }}>
+                                                <div><strong>Why now:</strong> {deriveWhyNow(task)}</div>
+                                                <div><strong>Next action:</strong> {deriveNextAction(task)}</div>
+                                            </div>
+                                        </a>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
                 {/* AI Motivation */}
                 <div className="section fade-in stagger-2">

@@ -106,6 +106,9 @@ export interface TaskItem {
     scheduledDate: string | null;
     hasProject: boolean;
     completed: boolean;
+    whyNow?: string | null;
+    nextAction?: string | null;
+    effortMinutes?: number | null;
     url: string;
     score?: number;
 }
@@ -127,11 +130,33 @@ export interface GoalItem {
     id: string;
     title: string;
     completed: boolean;
+    category: 'Personal' | 'Professional' | 'Health' | 'Wealth' | 'Uncategorized';
     description: string | null;
     url: string;
     progress: number;
     projectCount: number;
     completedProjects: number;
+}
+
+
+export interface PlanningOsSnapshot {
+    summary: {
+        activeGoals: number;
+        activeProjects: number;
+        activeTasks: number;
+        violations: number;
+    };
+    limits: {
+        activeGoalsMax: number;
+        activeProjectsPerGoalMax: number;
+        activeTasksPerProjectMax: number;
+    };
+    categoryCoverage: Record<'Personal' | 'Professional' | 'Health' | 'Wealth' | 'Uncategorized', number>;
+    missingCategories: string[];
+    goalsWithoutActiveProject: Array<{ id: string; title: string; category: string; url: string }>;
+    overloadedGoals: Array<{ id: string; title: string; category: string; activeProjects: number; url: string }>;
+    overloadedProjects: Array<{ id: string; title: string; activeTasks: number }>;
+    violations: string[];
 }
 
 export interface HealthData {
@@ -260,6 +285,7 @@ export const api = {
     goals:     () => get<GoalItem[]>('/goals'),
     health:    () => get<HealthData>('/analysis/health'),
     strategy:  () => get<StrategyData>('/analysis/strategy'),
+    planningOs: () => get<PlanningOsSnapshot>('/planning/os'),
     aiInsight: () => post<{ insight: string }>('/ai/insight'),
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
     healthExports: () => get<HealthExportsResponse>('/health-data/exports'),
