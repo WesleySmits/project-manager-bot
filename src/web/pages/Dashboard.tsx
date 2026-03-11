@@ -138,8 +138,57 @@ export default function Dashboard() {
                 )}
 
 
+
+                {/* Category Lock (UI-only) */}
+                {planning && (
+                    <div className="section fade-in stagger-2">
+                        <div className="section-title">🔒 Category Lock (UI-only)</div>
+                        <div className="card">
+                            <div className="card-body">
+                                {(() => {
+                                    const categories: Array<{ key: 'Professional' | 'Personal' | 'Health' | 'Wealth'; label: string }> = [
+                                        { key: 'Professional', label: 'Professional' },
+                                        { key: 'Personal', label: 'Personal' },
+                                        { key: 'Health', label: 'Health' },
+                                        { key: 'Wealth', label: 'Wealth' },
+                                    ];
+                                    const missing = categories.filter(c => (planning.categoryCoverage[c.key] ?? 0) < 1);
+                                    const duplicated = categories.filter(c => (planning.categoryCoverage[c.key] ?? 0) > 1);
+
+                                    return (
+                                        <>
+                                            {(missing.length > 0 || duplicated.length > 0) && (
+                                                <div style={{ marginBottom: 10 }}>
+                                                    <span className="badge high" style={{ marginRight: 8 }}>Needs rebalance</span>
+                                                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                                        {missing.length > 0 ? `Missing: ${missing.map(m => m.label).join(', ')}. ` : ''}
+                                                        {duplicated.length > 0 ? `Over 1 active: ${duplicated.map(d => d.label).join(', ')}.` : ''}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                                                {categories.map((c) => {
+                                                    const value = planning.categoryCoverage[c.key] ?? 0;
+                                                    const ok = value === 1;
+                                                    const cls = ok ? 'status-done' : (value === 0 ? 'high' : 'medium');
+                                                    return (
+                                                        <div key={c.key} className="issue-item" style={{ borderRadius: 8 }}>
+                                                            <span className={`badge ${cls}`}>{value}/1</span>
+                                                            <span style={{ marginLeft: 8 }}>{c.label}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Today Focus (Planning OS Contract) */}
-                <div className="section fade-in stagger-2">
+                <div className="section fade-in stagger-3">
                     <div className="section-title">🎯 Today Focus (Top 1 → Top 1 → Top 3)</div>
                     <div className="card">
                         <div className="card-body">
@@ -170,7 +219,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* AI Motivation */}
-                <div className="section fade-in stagger-2">
+                <div className="section fade-in stagger-4">
                     <div className="section-title">💡 Why This Matters</div>
                     <div className="card">
                         <div className="card-body">
@@ -189,7 +238,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Today's Priorities */}
-                <div className="section fade-in stagger-3">
+                <div className="section fade-in stagger-5">
                     <div className="section-title">Today's Priorities</div>
                     <div className="card">
                         <div className="card-body no-pad">
