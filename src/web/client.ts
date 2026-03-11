@@ -139,6 +139,26 @@ export interface GoalItem {
 }
 
 
+
+export interface DailyFocusData {
+    topGoal: { id: string; title: string; category: string; url: string } | null;
+    topProject: { id: string; title: string; url: string } | null;
+    topTasks: Array<{
+        rank: number;
+        id: string;
+        title: string;
+        priority: string | null;
+        dueDate: string | null;
+        scheduledDate: string | null;
+        whyNow: string;
+        nextAction: string;
+        url: string;
+    }>;
+    urgentOutOfFocus: Array<{ id: string; title: string; priority: string | null; why: string }>;
+    format: string;
+    selectionMode: 'top-down';
+}
+
 export interface PlanningOsSnapshot {
     summary: {
         activeGoals: number;
@@ -286,6 +306,7 @@ export const api = {
     health:    () => get<HealthData>('/analysis/health'),
     strategy:  () => get<StrategyData>('/analysis/strategy'),
     planningOs: () => get<PlanningOsSnapshot>('/planning/os'),
+    dailyFocus: () => get<DailyFocusData>('/planning/daily-focus'),
     aiInsight: () => post<{ insight: string }>('/ai/insight'),
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
     healthExports: () => get<HealthExportsResponse>('/health-data/exports'),

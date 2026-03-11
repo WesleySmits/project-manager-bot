@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, DashboardData, PlanningOsSnapshot } from '../client';
+import { api, DashboardData, PlanningOsSnapshot, DailyFocusData } from '../client';
 
 function priorityClass(p: string | null): string {
     if (!p) return 'none';
@@ -15,10 +15,11 @@ export default function Dashboard() {
     const [motivation, setMotivation] = useState<string | null>(null);
     const [motivationLoading, setMotivationLoading] = useState(false);
     const [planning, setPlanning] = useState<PlanningOsSnapshot | null>(null);
+    const [dailyFocus, setDailyFocus] = useState<DailyFocusData | null>(null);
 
     useEffect(() => {
-        Promise.all([api.dashboard(), api.planningOs()])
-            .then(([d, p]) => { setData(d); setPlanning(p); setLoading(false); })
+        Promise.all([api.dashboard(), api.planningOs(), api.dailyFocus()])
+            .then(([d, p, f]) => { setData(d); setPlanning(p); setDailyFocus(f); setLoading(false); })
             .catch(() => setLoading(false));
     }, []);
 
@@ -32,22 +33,6 @@ export default function Dashboard() {
 
     const m = data.metrics;
     const impact = data.todayImpact;
-    const focusTasks = data.todayTasks.slice(0, 3);
-    const topGoal = impact?.goalsAffected?.[0] ?? null;
-    const topProject = impact?.projectsAffected?.[0] ?? null;
-
-    const deriveWhyNow = (task: { whyNow?: string | null; priority: string | null; dueDate: string | null; scheduledDate: string | null }) => {
-        if (task.whyNow && task.whyNow.trim().length > 0) return task.whyNow;
-        if (task.dueDate) return `Due on ${task.dueDate} — prevents deadline spillover.`;
-        if (task.priority && /high|urgent|p1/i.test(task.priority)) return 'High-priority item that protects current momentum.';
-        if (task.scheduledDate) return `Scheduled for ${task.scheduledDate} — keeps the weekly plan on track.`;
-        return 'Advances your currently active project and reduces decision debt.';
-    };
-
-    const deriveNextAction = (task: { nextAction?: string | null; title: string }) => {
-        if (task.nextAction && task.nextAction.trim().length > 0) return task.nextAction;
-        return `Spend 25 minutes on the smallest shippable step for: ${task.title}`;
-    };
 
     return (
         <>
@@ -159,22 +144,22 @@ export default function Dashboard() {
                     <div className="card">
                         <div className="card-body">
                             <div style={{ marginBottom: 12, display: 'grid', gap: 8 }}>
-                                <div><strong>Top Goal:</strong> {topGoal ? <a href={topGoal.url} target="_blank" rel="noreferrer">{topGoal.title}</a> : 'Not identified yet — link tasks to goal-backed projects.'}</div>
-                                <div><strong>Top Project:</strong> {topProject ? <a href={topProject.url} target="_blank" rel="noreferrer">{topProject.title}</a> : 'Not identified yet — ensure active tasks are tied to a project.'}</div>
+                                <div><strong>Top Goal:</strong> {dailyFocus?.topGoal ? <a href={dailyFocus.topGoal.url} target="_blank" rel="noreferrer">{dailyFocus.topGoal.title}</a> : 'Not identified yet — set an active focus goal.'}</div>
+                                <div><strong>Top Project:</strong> {dailyFocus?.topProject ? <a href={dailyFocus.topProject.url} target="_blank" rel="noreferrer">{dailyFocus.topProject.title}</a> : 'Not identified yet — set an active project under the top goal.'}</div>
                             </div>
-                            {focusTasks.length === 0 ? (
+                            {!dailyFocus || dailyFocus.topTasks.length === 0 ? (
                                 <div className="empty-state">No priority tasks found for today.</div>
                             ) : (
                                 <div className="issue-list">
-                                    {focusTasks.map((task, i) => (
+                                    {dailyFocus.topTasks.map((task, i) => (
                                         <a key={task.id} href={task.url} target="_blank" rel="noreferrer" className="issue-item" style={{ display: 'block', textDecoration: 'none' }}>
                                             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
                                                 <span className="badge status-active">T{i + 1}</span>
                                                 <span style={{ color: 'var(--text-primary)' }}>{task.title}</span>
                                             </div>
                                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 4 }}>
-                                                <div><strong>Why now:</strong> {deriveWhyNow(task)}</div>
-                                                <div><strong>Next action:</strong> {deriveNextAction(task)}</div>
+                                                <div><strong>Why now:</strong> {task.whyNow}</div>
+                                                <div><strong>Next action:</strong> {task.nextAction}</div>
                                             </div>
                                         </a>
                                     ))}

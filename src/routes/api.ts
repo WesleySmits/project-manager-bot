@@ -6,7 +6,7 @@ import { getProvider, Task, Project, Goal } from '../providers';
 import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
-import { getTodayTasks } from '../commands/todayTasks';
+import { getTodayTasks, scoreTask } from '../commands/todayTasks';
 import { getStrategicAdvice, generateMotivation } from '../ai/gemini';
 
 const router = Router();
@@ -575,44 +575,86 @@ router.get('/planning/os', async (_req: Request, res: Response) => {
 
 
 
-/** Daily focus contract: Top Goal -> Top Project -> Top 3 Tasks */
+/** Daily focus contract: Top Goal -> Top Project -> Top 3 Tasks (top-down) */
 router.get('/planning/daily-focus', async (_req: Request, res: Response) => {
     try {
         const provider = getProvider();
-        const [tasks, projects, goals] = await Promise.all([
-            getTodayTasks(3),
+        const [allTasks, projects, goals] = await Promise.all([
+            provider.fetchTasks(),
             provider.fetchProjects(),
             provider.fetchGoals(),
         ]);
 
-        const topTasks = tasks.slice(0, 3);
-        const topProject = (() => {
-            const withProject = topTasks.find(t => t.projectId);
-            if (!withProject?.projectId) return null;
-            return projects.find(p => p.id === withProject.projectId) ?? null;
-        })();
+        const isFocusFlagged = (raw: Record<string, unknown> | undefined, keys: string[]): boolean => {
+            if (!raw) return false;
+            for (const key of keys) {
+                const prop = raw[key] as { type?: string; checkbox?: boolean } | undefined;
+                if (prop?.type === 'checkbox' && prop.checkbox === true) return true;
+            }
+            return false;
+        };
 
-        const topGoal = (() => {
-            if (!topProject || topProject.goalIds.length === 0) return null;
-            return goals.find(g => topProject.goalIds.includes(g.id)) ?? null;
-        })();
+        const activeGoals = goals.filter(g => !g.completed);
+        const activeProjects = projects.filter(p => p.statusCategory === 'ACTIVE');
 
-        const normalizedTasks = topTasks.map((task, idx) => ({
+        const goalScore = (goal: Goal): number => {
+            const projectsInGoal = activeProjects.filter(p => p.goalIds.includes(goal.id));
+            const taskCount = allTasks.filter(t => !t.completed && t.projectId && projectsInGoal.some(p => p.id === t.projectId)).length;
+            const focusBoost = isFocusFlagged(goal.raw, ['Focus This Week', 'Focus']) ? 1000 : 0;
+            return focusBoost + (projectsInGoal.length * 10) + taskCount;
+        };
+
+        const topGoal = [...activeGoals].sort((a, b) => goalScore(b) - goalScore(a))[0] ?? null;
+
+        const projectCandidates = topGoal
+            ? activeProjects.filter(p => p.goalIds.includes(topGoal.id))
+            : [];
+
+        const projectScore = (project: Project): number => {
+            const taskCount = allTasks.filter(t => !t.completed && t.projectId === project.id).length;
+            const focusBoost = isFocusFlagged(project.raw, ['Focus This Week', 'Focus']) ? 1000 : 0;
+            return focusBoost + taskCount;
+        };
+
+        const topProject = [...projectCandidates].sort((a, b) => projectScore(b) - projectScore(a))[0] ?? null;
+
+        const inFocusTasks = topProject
+            ? allTasks
+                .filter(t => !t.completed && t.projectId === topProject.id)
+                .sort((a, b) => scoreTask(b) - scoreTask(a))
+                .slice(0, 3)
+            : [];
+
+        const urgentOutOfFocus = allTasks
+            .filter(t => !t.completed && (!topProject || t.projectId !== topProject.id))
+            .sort((a, b) => scoreTask(b) - scoreTask(a))
+            .slice(0, 3)
+            .map(t => ({
+                id: t.id,
+                title: t.title,
+                priority: t.priority ?? null,
+                why: 'Urgent, but outside current focus project.',
+            }));
+
+        const normalizedTasks = inFocusTasks.map((task, idx) => ({
             rank: idx + 1,
             id: task.id,
             title: task.title,
             priority: task.priority ?? null,
             dueDate: task.dueDate ?? null,
             scheduledDate: task.scheduledDate ?? null,
-            whyNow: task.whyNow?.trim() ? task.whyNow : 'Moves your active plan forward and reduces decision debt.',
+            whyNow: task.whyNow?.trim() ? task.whyNow : 'Chosen inside top project to advance the selected goal.',
             nextAction: task.nextAction?.trim() ? task.nextAction : `25 min sprint on the smallest shippable step of "${task.title}".`,
+            url: task.url,
         }));
 
         res.json({
             topGoal: topGoal ? { id: topGoal.id, title: topGoal.title, category: topGoal.category, url: topGoal.url } : null,
             topProject: topProject ? { id: topProject.id, title: topProject.title, url: topProject.url } : null,
             topTasks: normalizedTasks,
+            urgentOutOfFocus,
             format: 'Top 1 Goal -> Top 1 Project -> Top 3 Tasks',
+            selectionMode: 'top-down',
         });
     } catch (err) {
         console.error('Daily focus API error:', err);
