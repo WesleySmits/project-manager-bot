@@ -12,6 +12,7 @@
     "url": "https://github.com/WesleySmits/project-manager-bot/issues"
   },
   "author": "Wesley Smits <wesleysmits@gmail.com>",
+  "license": "MIT",
   "keywords": [
     "telegram-bot",
     "notion",
