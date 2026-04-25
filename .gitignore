@@ -27,3 +27,5 @@ pids
 dist
 mcp_config.json
 data/
+
+cache.bin
