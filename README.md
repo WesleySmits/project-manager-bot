@@ -2,6 +2,7 @@
 
 A hybrid **Telegram bot + web dashboard** for personal project management — backed by Notion, augmented with Google Gemini AI, and integrated with Apple Health for a holistic view of how work and well-being interact.
 
+[![CI](https://github.com/WesleySmits/project-manager-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/WesleySmits/project-manager-bot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-green.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6.svg)](https://www.typescriptlang.org/)

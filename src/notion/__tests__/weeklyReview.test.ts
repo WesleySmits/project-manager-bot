@@ -24,6 +24,10 @@ vi.mock('../client', () => ({
     getTitle: (page: { _title?: string }) => page._title ?? 'Untitled',
     getDate: (page: Record<string, Record<string, string>>, prop: string) => page._dates?.[prop] ?? null,
     isCompleted: (page: { _completed?: boolean }) => page._completed === true,
+    getSelect: (page: { properties?: Record<string, { type: string; select?: { name: string } | null }> }, prop: string) => {
+        const p = page.properties?.[prop];
+        return p && p.type === 'select' && p.select ? p.select.name : null;
+    },
 }));
 
 import * as client from '../client';
