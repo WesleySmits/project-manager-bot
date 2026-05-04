@@ -382,7 +382,9 @@ bot.launch().then(() => {
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
 // Check every hour if we need to run daily analytics
+// Set ANALYTICS_ENABLED=false to pause analytics collection
 setInterval(async () => {
+    if (process.env.ANALYTICS_ENABLED === 'false') return;
     try {
         const now = Temporal.Now.plainDateISO();
         const latest = await getLatestSnapshot();
@@ -401,6 +403,7 @@ setInterval(async () => {
 }, 60 * 60 * 1000); // Check every hour
 
 // Morning briefing scheduler — fires at 07:00 MSK (04:00 UTC) every day
+// Set BRIEFING_ENABLED=false to pause morning briefing and end-of-day score messages
 setInterval(async () => {
     try {
         const now = Temporal.Now.zonedDateTimeISO('UTC');
@@ -408,10 +411,14 @@ setInterval(async () => {
         const minute = now.minute;
         // Fire between 04:00 and 04:01 UTC (07:00 MSK)
         if (hour === 4 && minute === 0) {
-            console.log('☀️ Sending scheduled morning briefing...');
-            // Evaluate yesterday before sending briefing (so score is up to date)
-            await evaluateYesterday().catch(err => console.error('Score eval error:', err));
-            await sendMorningBriefing(bot);
+            if (process.env.BRIEFING_ENABLED !== 'false') {
+                console.log('☀️ Sending scheduled morning briefing...');
+                // Evaluate yesterday before sending briefing (so score is up to date)
+                await evaluateYesterday().catch(err => console.error('Score eval error:', err));
+                await sendMorningBriefing(bot);
+            } else {
+                console.log('⏸️ Morning briefing skipped (BRIEFING_ENABLED=false)');
+            }
         }
     } catch (err) {
         console.error('❌ Morning briefing scheduler error:', err);
@@ -422,11 +429,15 @@ setInterval(async () => {
     try {
         const now2 = Temporal.Now.zonedDateTimeISO('UTC');
         if (now2.hour === 20 && now2.minute === 0) {
-            console.log('📊 Running end-of-day score evaluation...');
-            const { state: scoreState, latestEntry, message: scoreMsg } = await getCurrentScore(true);
-            const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-            if (CHAT_ID && latestEntry && latestEntry.delta !== 0) {
-                await bot.telegram.sendMessage(CHAT_ID, scoreMsg, { parse_mode: 'Markdown' });
+            if (process.env.BRIEFING_ENABLED !== 'false') {
+                console.log('📊 Running end-of-day score evaluation...');
+                const { state: scoreState, latestEntry, message: scoreMsg } = await getCurrentScore(true);
+                const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+                if (CHAT_ID && latestEntry && latestEntry.delta !== 0) {
+                    await bot.telegram.sendMessage(CHAT_ID, scoreMsg, { parse_mode: 'Markdown' });
+                }
+            } else {
+                console.log('⏸️ End-of-day score skipped (BRIEFING_ENABLED=false)');
             }
         }
     } catch (err) {
