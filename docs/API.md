@@ -198,6 +198,47 @@ Aggregated view: metrics, today's tasks, overdue items, and today's impact on go
 
 ---
 
+### Get Agentic Dashboard Feed
+
+```http
+GET /api/agentic/dashboard
+```
+
+Read-only Agentic OS feed for the main Project Manager dashboard. It returns Start Here cards, mail action summaries, decisions, signals, and source-health status. If the optional `AGENTIC_*` database env vars are not configured, the endpoint returns `200 OK` with `mode: "disabled"`, empty arrays, and a warning.
+
+**Response** `200 OK`:
+
+```json
+{
+  "enabled": true,
+  "generatedAt": "2026-05-24T07:00:00.000Z",
+  "today": "2026-05-24",
+  "mode": "notion",
+  "warnings": [],
+  "startHere": [
+    {
+      "id": "dashboard:page-uuid",
+      "title": "Reply to urgent client email",
+      "area": "Mail",
+      "priority": "High",
+      "source": "Spark",
+      "why": "Client is waiting on a decision.",
+      "nextStep": "Draft the reply.",
+      "url": "https://notion.so/...",
+      "sortScore": 1090
+    }
+  ],
+  "mailItems": [],
+  "decisions": [],
+  "signals": [],
+  "sourceHealth": []
+}
+```
+
+The endpoint does not mutate Notion, Spark, finance records, task/project/goal statuses, or external services.
+
+---
+
 ## Tasks
 
 ### List All Tasks

@@ -1,10 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { api, DashboardData, PlanningOsSnapshot, DailyFocusData } from '../client';
+import {
+    api,
+    AgenticDashboardData,
+    AgenticDashboardItem,
+    AgenticDecisionItem,
+    AgenticReportHealth,
+    AgenticStartHereItem,
+    DashboardData,
+    DailyFocusData,
+    PlanningOsSnapshot,
+} from '../client';
 
 function priorityClass(p: string | null): string {
     if (!p) return 'none';
     const l = p.toLowerCase();
-    if (l.includes('high') || l.includes('p1') || l.includes('urgent')) return 'high';
+    if (l.includes('critical') || l.includes('high') || l.includes('p0') || l.includes('p1') || l.includes('urgent')) return 'high';
     if (l.includes('medium') || l.includes('p2')) return 'medium';
     return 'low';
 }
@@ -16,10 +26,16 @@ export default function Dashboard() {
     const [motivationLoading, setMotivationLoading] = useState(false);
     const [planning, setPlanning] = useState<PlanningOsSnapshot | null>(null);
     const [dailyFocus, setDailyFocus] = useState<DailyFocusData | null>(null);
+    const [agentic, setAgentic] = useState<AgenticDashboardData | null>(null);
 
     useEffect(() => {
-        Promise.all([api.dashboard(), api.planningOs(), api.dailyFocus()])
-            .then(([d, p, f]) => { setData(d); setPlanning(p); setDailyFocus(f); setLoading(false); })
+        Promise.all([
+            api.dashboard(),
+            api.planningOs(),
+            api.dailyFocus(),
+            api.agenticDashboard().catch((error) => agenticFallback(error)),
+        ])
+            .then(([d, p, f, a]) => { setData(d); setPlanning(p); setDailyFocus(f); setAgentic(a); setLoading(false); })
             .catch(() => setLoading(false));
     }, []);
 
@@ -59,6 +75,7 @@ export default function Dashboard() {
                     </div>
                 </div>
 
+                {agentic && <AgenticFeed agentic={agentic} />}
 
                 {/* Planning OS */}
                 {planning && (
@@ -296,4 +313,145 @@ export default function Dashboard() {
             </div>
         </>
     );
+}
+
+function AgenticFeed({ agentic }: { agentic: AgenticDashboardData }) {
+    const showCompact = agentic.enabled && (
+        agentic.mailItems.length > 0 ||
+        agentic.decisions.length > 0 ||
+        agentic.signals.length > 0 ||
+        agentic.sourceHealth.length > 0
+    );
+
+    return (
+        <div className="section fade-in stagger-1">
+            <div className="section-title">Start Here</div>
+            {agentic.warnings.length > 0 && (
+                <div className="agentic-warning">
+                    {agentic.warnings.map((warning) => <div key={warning}>{warning}</div>)}
+                </div>
+            )}
+            {agentic.startHere.length === 0 ? (
+                <div className="card">
+                    <div className="empty-state">No Agentic focus cards loaded.</div>
+                </div>
+            ) : (
+                <div className="agentic-start-grid">
+                    {agentic.startHere.map((item) => <StartHereCard key={item.id} item={item} />)}
+                </div>
+            )}
+
+            {showCompact && (
+                <div className="agentic-compact-grid">
+                    <DashboardItems title="Mail" items={agentic.mailItems} />
+                    <DecisionItems decisions={agentic.decisions} />
+                    <DashboardItems title="Signals" items={agentic.signals} />
+                    <SourceHealthItems sources={agentic.sourceHealth} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+function StartHereCard({ item }: { item: AgenticStartHereItem }) {
+    return (
+        <article className="agentic-card">
+            <div className="agentic-card-head">
+                <span className="badge status-active">{item.area}</span>
+                <span className={`badge ${priorityClass(item.priority)}`}>{item.priority}</span>
+            </div>
+            <h2>{linkOrText(item.url, item.title)}</h2>
+            <p>{item.why}</p>
+            <p className="agentic-next">{item.nextStep}</p>
+            <div className="agentic-card-foot">
+                <span>{item.source}</span>
+                {item.sourceKey ? <span>{item.sourceKey}</span> : null}
+            </div>
+        </article>
+    );
+}
+
+function DashboardItems({ title, items }: { title: string; items: AgenticDashboardItem[] }) {
+    return (
+        <div className="card">
+            <div className="card-header"><h2>{title}</h2><span className="badge none">{items.length}</span></div>
+            <div className="card-body no-pad">
+                {items.length === 0 ? <div className="empty-state compact">None loaded.</div> : (
+                    <div className="issue-list">
+                        {items.map((item) => (
+                            <a key={item.id} href={item.url} target="_blank" rel="noreferrer" className="issue-item">
+                                <span className="issue-dot accent" />
+                                <span style={{ flex: 1 }}>{item.title}</span>
+                                <span className={`badge ${priorityClass(item.priority)}`}>{item.priority}</span>
+                            </a>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function DecisionItems({ decisions }: { decisions: AgenticDecisionItem[] }) {
+    return (
+        <div className="card">
+            <div className="card-header"><h2>Decisions</h2><span className="badge none">{decisions.length}</span></div>
+            <div className="card-body no-pad">
+                {decisions.length === 0 ? <div className="empty-state compact">No open decisions.</div> : (
+                    <div className="issue-list">
+                        {decisions.map((decision) => (
+                            <a key={decision.id} href={decision.url} target="_blank" rel="noreferrer" className="issue-item">
+                                <span className="issue-dot yellow" />
+                                <span style={{ flex: 1 }}>{decision.title}</span>
+                                <span className={`badge ${priorityClass(decision.priority)}`}>{decision.priority}</span>
+                            </a>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function SourceHealthItems({ sources }: { sources: AgenticReportHealth[] }) {
+    return (
+        <div className="card">
+            <div className="card-header"><h2>Source Health</h2><span className="badge none">{sources.length}</span></div>
+            <div className="card-body no-pad">
+                <div className="issue-list">
+                    {sources.map((source) => (
+                        <a key={source.reportType} href={source.url} target="_blank" rel="noreferrer" className="issue-item">
+                            <span className={`issue-dot ${source.status === 'Fresh' ? 'green' : source.status === 'Stale' ? 'orange' : 'red'}`} />
+                            <span style={{ flex: 1 }}>{source.label}</span>
+                            <span className={`badge ${source.status === 'Fresh' ? 'status-done' : source.status === 'Stale' ? 'medium' : 'high'}`}>
+                                {source.status}
+                            </span>
+                        </a>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function linkOrText(url: string | undefined, label: string) {
+    if (!url) return label;
+    return <a href={url} target="_blank" rel="noreferrer">{label}</a>;
+}
+
+function agenticFallback(error: unknown): AgenticDashboardData {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+        enabled: false,
+        generatedAt: new Date().toISOString(),
+        today: new Date().toISOString().slice(0, 10),
+        mode: 'error',
+        warnings: [`Agentic feed failed to load: ${message}`],
+        startHere: [],
+        focusItems: [],
+        mailItems: [],
+        signals: [],
+        decisions: [],
+        sourceHealth: [],
+    };
 }

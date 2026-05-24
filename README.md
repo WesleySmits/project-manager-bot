@@ -34,6 +34,7 @@ It's opinionated about focus: **one top goal, one top project, three top tasks p
 
 ### Strategic planning
 - **Goal → Project → Task hierarchy** synced from Notion
+- **Agentic Start Here feed** for mail, decisions, readiness, finance, and source-health signals
 - **Weekly review** with progress, blockers, and stalled-project detection
 - **AI strategist** powered by Gemini — surfaces priorities, blind spots, and rebalancing suggestions
 - **Category locks** to enforce one goal per life domain
@@ -155,8 +156,13 @@ Copy `.env.example` to `.env` and fill in the values:
 | `GEMINI_API_KEY` |  | [Google AI Studio](https://aistudio.google.com/) |
 | `API_KEY` |  | Static key for machine callers (same generator as `JWT_SECRET`) |
 | `NOTION_HEALTH_DB_ID` |  | Notion Health Metrics database ID |
+| `AGENTIC_DASHBOARD_ITEMS_DB` |  | Optional Agentic OS Dashboard Items database ID |
+| `AGENTIC_REPORTS_DB` |  | Optional Agentic OS Reports database ID |
+| `AGENTIC_DECISION_QUEUE_DB` |  | Optional Agentic OS Decision Queue database ID |
 
 The server refuses to start if any required variable is missing.
+
+If any `AGENTIC_*` variable is omitted, the read-only Agentic feed is disabled and the main dashboard still loads with a warning. These databases are only queried for dashboard display; the Project Manager app does not mutate Agentic mail, finance, decision, or report sources.
 
 ### 3. Install and run
 
@@ -209,6 +215,7 @@ src/
   middleware/             JWT auth
   notion/                 Notion API client + workspace diagnostics
   pm/strategy.ts          Strategic analysis engine
+  agentic/                Read-only Agentic OS dashboard feed
   routes/                 REST API routers
   web/                    React SPA (Vite)
 docs/API.md               Complete REST API reference

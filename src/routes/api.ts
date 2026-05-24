@@ -8,6 +8,7 @@ import { runHealthCheck } from '../notion/health';
 import { runStrategyAnalysis } from '../pm/strategy';
 import { getTodayTasks, scoreTask } from '../commands/todayTasks';
 import { getStrategicAdvice, generateMotivation } from '../ai/gemini';
+import { getAgenticDashboard } from '../agentic/dashboard';
 
 const router = Router();
 
@@ -194,6 +195,12 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         console.error('Dashboard API error:', err);
         res.status(500).json({ error: 'Failed to load dashboard' });
     }
+});
+
+/** Agentic OS feed for the primary Project Manager dashboard */
+router.get('/agentic/dashboard', async (_req: Request, res: Response) => {
+    const dashboard = await getAgenticDashboard();
+    res.json(dashboard);
 });
 
 /** All tasks */

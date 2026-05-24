@@ -179,6 +179,84 @@ export interface PlanningOsSnapshot {
     violations: string[];
 }
 
+export type AgenticPriority = 'Critical' | 'High' | 'Medium' | 'Low';
+
+export type AgenticArea =
+    | 'Tasks'
+    | 'Mail'
+    | 'Decisions'
+    | 'Finance'
+    | 'Leads'
+    | 'Readiness'
+    | 'System';
+
+export interface AgenticStartHereItem {
+    id: string;
+    title: string;
+    area: AgenticArea;
+    priority: AgenticPriority;
+    source: string;
+    why: string;
+    nextStep: string;
+    url?: string;
+    sourceKey?: string;
+    sortScore: number;
+}
+
+export interface AgenticDashboardItem {
+    id: string;
+    title: string;
+    area: AgenticArea;
+    priority: AgenticPriority;
+    source: string;
+    sourceKey?: string;
+    summary: string;
+    nextStep: string;
+    url?: string;
+    forDate?: string;
+    lastSeenAt?: string;
+    sortScore: number;
+    sensitive: boolean;
+    externalAction: boolean;
+}
+
+export interface AgenticDecisionItem {
+    id: string;
+    title: string;
+    status: string;
+    area: string;
+    priority: AgenticPriority;
+    risk: string;
+    decisionNeeded: string;
+    url?: string;
+    dueDate?: string;
+}
+
+export interface AgenticReportHealth {
+    label: string;
+    reportType: string;
+    lastRun?: string;
+    status: 'Fresh' | 'Stale' | 'Missing' | 'Needs Review';
+    url?: string;
+    reason: string;
+    actionLabel: string;
+    ageDays?: number;
+}
+
+export interface AgenticDashboardData {
+    enabled: boolean;
+    generatedAt: string;
+    today: string;
+    mode: 'notion' | 'disabled' | 'error';
+    warnings: string[];
+    startHere: AgenticStartHereItem[];
+    focusItems: AgenticDashboardItem[];
+    mailItems: AgenticDashboardItem[];
+    signals: AgenticDashboardItem[];
+    decisions: AgenticDecisionItem[];
+    sourceHealth: AgenticReportHealth[];
+}
+
 export interface HealthData {
     totals: {
         tasks: number;
@@ -307,6 +385,7 @@ export const api = {
     strategy:  () => get<StrategyData>('/analysis/strategy'),
     planningOs: () => get<PlanningOsSnapshot>('/planning/os'),
     dailyFocus: () => get<DailyFocusData>('/planning/daily-focus'),
+    agenticDashboard: () => get<AgenticDashboardData>('/agentic/dashboard'),
     aiInsight: () => post<{ insight: string }>('/ai/insight'),
     motivation: () => post<{ motivation: string }>('/ai/motivation'),
     healthExports: () => get<HealthExportsResponse>('/health-data/exports'),
@@ -338,4 +417,5 @@ export function prefetchAll(): void {
     void api.goals();
     void api.health();
     void api.strategy();
+    void api.agenticDashboard();
 }

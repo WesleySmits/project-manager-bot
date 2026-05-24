@@ -469,6 +469,14 @@ tbody td.title-col {
     background: var(--orange);
 }
 
+.issue-dot.green {
+    background: var(--green);
+}
+
+.issue-dot.accent {
+    background: var(--accent);
+}
+
 .issue-dot.yellow {
     background: var(--yellow);
 }
@@ -721,6 +729,10 @@ tbody td.title-col {
     font-size: 13px;
 }
 
+.empty-state.compact {
+    padding: 24px;
+}
+
 .spinner {
     width: 16px;
     height: 16px;
@@ -836,6 +848,76 @@ tbody td.title-col {
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 12px;
+}
+
+/* ─── Agentic Feed ────────────────────────────────────────────────────────── */
+.agentic-warning {
+    background: var(--orange-subtle);
+    border: 1px solid rgba(251, 146, 60, 0.25);
+    border-radius: var(--radius-md);
+    color: var(--orange);
+    font-size: 12px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+}
+
+.agentic-start-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.agentic-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    min-height: 180px;
+    padding: 16px;
+}
+
+.agentic-card-head,
+.agentic-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.agentic-card h2 {
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+    margin: 14px 0 8px;
+}
+
+.agentic-card p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.agentic-card .agentic-next {
+    color: var(--text-primary);
+}
+
+.agentic-card-foot {
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-top: 14px;
+}
+
+.agentic-compact-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .agentic-compact-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ─── Health Dashboard ────────────────────────────────────────────────────── */

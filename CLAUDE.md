@@ -75,6 +75,9 @@ scripts/                  # Utility scripts
 | `NOTION_GOALS_DB` | **Yes** | Notion Goals database ID |
 | `JWT_SECRET` | **Yes** | JWT signing secret — use a long random string |
 | `NOTION_HEALTH_DB_ID` | No | Notion Health Metrics database ID |
+| `AGENTIC_DASHBOARD_ITEMS_DB` | No | Agentic OS Dashboard Items database ID for the read-only dashboard feed |
+| `AGENTIC_REPORTS_DB` | No | Agentic OS Reports database ID for source health |
+| `AGENTIC_DECISION_QUEUE_DB` | No | Agentic OS Decision Queue database ID |
 | `API_KEY` | No | Static API key for machine callers (Openclaw, scripts). Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `ALLOWED_ORIGIN` | No | CORS allowed origin (default: `http://localhost:5173`) |
 | `BASIC_AUTH_USER` | No | Web login username |
@@ -84,6 +87,8 @@ scripts/                  # Utility scripts
 | `NODE_ENV` | No | `production` or `development` |
 
 The app will **refuse to start** if any of the required variables are missing.
+
+The `AGENTIC_*` variables are optional. If any are absent, `/api/agentic/dashboard` returns a disabled, empty feed with a warning so the Project Manager dashboard can still load. The Agentic feed is read-only; do not add controls that mutate mail, finance, decisions, reports, tasks, projects, goals, or external services without a separate execution-layer plan.
 
 ---
 
