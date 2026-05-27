@@ -2,9 +2,24 @@
  * REST API Routes for Web Interface
  */
 import { Router, Request, Response } from 'express';
-import { getProvider, Task, Project, Goal } from '../providers';
+import { getProvider } from '../providers';
+import type { Task, Project, Goal } from '../providers';
 import { getWeeklyReview } from '../notion/weeklyReview';
 import { runHealthCheck } from '../notion/health';
+import {
+    getDate,
+    getDescription,
+    getProjectStatusCategory,
+    getRelationIds,
+    getSelect,
+    getStatus,
+    getTitle,
+    isActiveProject,
+    isBlocked,
+    isCompleted,
+    isEvergreen,
+    type NotionPage,
+} from '../notion/client';
 import { runStrategyAnalysis } from '../pm/strategy';
 import { getTodayTasks, scoreTask } from '../commands/todayTasks';
 import { getStrategicAdvice, generateMotivation } from '../ai/gemini';
@@ -54,6 +69,39 @@ function serializeGoal(g: Goal) {
         category: g.category,
         description: g.description,
         url: g.url,
+    };
+}
+
+function mapHealthTask(page: NotionPage): Task {
+    return {
+        id: page.id,
+        shortId: null,
+        title: getTitle(page),
+        description: getDescription(page),
+        status: getStatus(page) ?? getSelect(page, 'Status') ?? 'unknown',
+        priority: getSelect(page, 'Priority'),
+        dueDate: getDate(page, 'Due Date') ?? getDate(page, 'Due'),
+        scheduledDate: getDate(page, 'Scheduled'),
+        projectId: getRelationIds(page, 'Project')[0] ?? null,
+        url: page.url ?? '',
+        completed: isCompleted(page),
+        raw: page.properties as unknown as Record<string, unknown>,
+    };
+}
+
+function mapHealthProject(page: NotionPage): Project {
+    return {
+        id: page.id,
+        title: getTitle(page),
+        description: getDescription(page),
+        status: getStatus(page) ?? getSelect(page, 'Status'),
+        statusCategory: getProjectStatusCategory(page),
+        blocked: isBlocked(page),
+        active: isActiveProject(page),
+        evergreen: isEvergreen(page),
+        goalIds: getRelationIds(page, 'Goal'),
+        url: page.url ?? '',
+        raw: page.properties as unknown as Record<string, unknown>,
     };
 }
 
@@ -131,18 +179,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
                 health.issues.overdueDueDate.length +
                 health.issues.overdueScheduled.length +
                 health.issues.missingRequiredFields.length;
-            overdueTasks = health.issues.overdueDueDate.map((t: any) => ({
-                id: t.id,
-                shortId: null,
-                title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                status: t.properties?.['Status']?.status?.name ?? null,
-                priority: t.properties?.['Priority']?.select?.name ?? null,
-                dueDate: t.properties?.['Due Date']?.date?.start ?? null,
-                scheduledDate: null,
-                projectId: null,
-                url: t.url,
-                completed: false,
-            }));
+            overdueTasks = health.issues.overdueDueDate.map(mapHealthTask);
         } catch {
             const ph = await provider.healthCheck();
             healthIssues = ph.issues.filter(i => i.severity === 'error').length;
@@ -259,31 +296,11 @@ router.get('/analysis/health', async (_req: Request, res: Response) => {
             return res.json({
                 totals: health.totals,
                 issues: {
-                    orphanedTasks: health.issues.orphanedTasks.map((t: any) => serializeTask({
-                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
-                        projectId: null, url: t.url ?? '', completed: false,
-                    } as any)),
-                    projectsWithoutGoal: health.issues.projectsWithoutGoal.map((p: any) => serializeProject({
-                        id: p.id, title: p.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                        status: null, statusCategory: 'UNKNOWN', blocked: false,
-                        active: false, evergreen: false, goalIds: [], url: p.url ?? '', description: null,
-                    })),
-                    overdueDueDate: health.issues.overdueDueDate.map((t: any) => serializeTask({
-                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
-                        projectId: null, url: t.url ?? '', completed: false,
-                    } as any)),
-                    overdueScheduled: health.issues.overdueScheduled.map((t: any) => serializeTask({
-                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
-                        projectId: null, url: t.url ?? '', completed: false,
-                    } as any)),
-                    missingRequiredFields: health.issues.missingRequiredFields.map((t: any) => serializeTask({
-                        id: t.id, shortId: null, title: t.properties?.['Name']?.title?.[0]?.plain_text ?? 'Untitled',
-                        status: 'unknown', priority: null, dueDate: null, scheduledDate: null,
-                        projectId: null, url: t.url ?? '', completed: false,
-                    } as any)),
+                    orphanedTasks: health.issues.orphanedTasks.map(mapHealthTask).map(serializeTask),
+                    projectsWithoutGoal: health.issues.projectsWithoutGoal.map(mapHealthProject).map(serializeProject),
+                    overdueDueDate: health.issues.overdueDueDate.map(mapHealthTask).map(serializeTask),
+                    overdueScheduled: health.issues.overdueScheduled.map(mapHealthTask).map(serializeTask),
+                    missingRequiredFields: health.issues.missingRequiredFields.map(mapHealthTask).map(serializeTask),
                 },
             });
         }
